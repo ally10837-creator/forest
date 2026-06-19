@@ -871,7 +871,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbyvMrVM0B0FwFqdKMVy6Yhdh0NS2dnUjOEumnmZHtRkm-VOwNsokKNHpSC5AbLHZJE_/exec";
+const API = "https://script.google.com/macros/s/AKfycbzzcE64kGl_QPVzipoftMaq9hrWckyoqVjUWcH4kAoq3JYQTYWVN_IBWjA3TG5K0nD1/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -1084,16 +1084,25 @@ function renderMenu(data) {
     const photoHtml = m.food_photo
       ? `<img src="${m.food_photo}" alt="${m.item_name}" onerror="this.outerHTML='🍱'">`
       : '🍱';
+    const onSale = m.is_sale_active == 1;
+    const priceHtml = onSale
+      ? `<div class="price-tag" style="display:flex;align-items:center;gap:4px;">
+           <span style="text-decoration:line-through;opacity:0.5;font-size:12px;">${m.price_coins}</span>
+           ${C(15)} <span style="color:#e6483c;font-weight:800;">${m.sale_price}</span>
+         </div>`
+      : `<div class="price-tag" style="display:flex;align-items:center;gap:4px;">${C(15)} ${m.price_coins}</div>`;
+    const saleBadge = onSale ? `<div class="stock-badge" style="left:6px;right:auto;background:#e6483c;">🔥 特價中</div>` : '';
     return `
       <div class="menu-card">
         <div class="menu-photo">
           ${photoHtml}
+          ${saleBadge}
           <div class="stock-badge">剩 ${m.stock}</div>
         </div>
         <div class="menu-body">
           <div class="menu-name">${rb(m.item_name)}</div>
           <div class="menu-foot">
-            <div class="price-tag" style="display:flex;align-items:center;gap:4px;">${C(15)} ${m.price_coins}</div>
+            ${priceHtml}
             <button class="order-btn" onclick="addToCart('${m.food_id}')">加入 🛒</button>
           </div>
         </div>
@@ -1252,8 +1261,10 @@ function confirmAddToCart() {
   if (!item) return;
   const cart = getCart();
   const existing = cart.find(c => c.food_id === foodId && c.note === note);
+  // 若特價生效中，購物車副本的 price_coins 直接用特價，確保前端顯示總價跟後端實際扣款一致
+  const effectivePrice = (item.is_sale_active == 1) ? item.sale_price : item.price_coins;
   if (existing) { existing.qty++; }
-  else { cart.push({...item, qty: 1, note: note || ''}); }
+  else { cart.push({...item, price_coins: effectivePrice, original_price: item.price_coins, qty: 1, note: note || ''}); }
   updateCartFab();
   showToast(`🛒 加入 ${MEMBERS[currentChild].name} 的購物車！`, 'success');
   playCoin();
@@ -1606,7 +1617,10 @@ function renderMenuEditor() {
   const items = allData.candice?.menu || [];
   const el = document.getElementById('menu-editor');
   if (!items.length) { el.innerHTML = '<div class="empty">目前沒有菜單品項</div>'; return; }
-  el.innerHTML = items.map(m => `
+  el.innerHTML = items.map(m => {
+    const onSale = m.is_sale_active == 1;
+    const saleEndForInput = m.sale_end ? toDatetimeLocalValue(m.sale_end) : '';
+    return `
     <div class="sheet-row" id="mrow-${m.food_id}">
       <div class="sheet-row-emoji">🍱</div>
       <div class="sheet-row-body">
@@ -1616,7 +1630,63 @@ function renderMenuEditor() {
         <button class="save-row-btn" onclick="saveMenuItem('${m.food_id}')">💾 儲存</button>
       </div>
       <button class="del-btn" onclick="deleteMenuItem('${m.food_id}')">🗑</button>
-    </div>`).join('');
+    </div>
+    <div class="sheet-row sale-row" id="msale-${m.food_id}" style="padding:6px 10px 10px 44px;border-top:none;">
+      <div class="sheet-row-body" style="gap:6px;align-items:center;">
+        <span style="font-size:12px;color:var(--cocoa-soft);white-space:nowrap;">🔥特價</span>
+        <input class="sheet-field num" id="msp-${m.food_id}" type="number" placeholder="特價金額" value="${m.sale_price ?? ''}" style="max-width:90px;">
+        <input class="sheet-field" id="mse-${m.food_id}" type="datetime-local" value="${saleEndForInput}" style="max-width:170px;">
+        <button class="save-row-btn" onclick="saveMenuSale('${m.food_id}')">✅ 設定</button>
+        ${onSale ? `<button class="del-btn" onclick="cancelMenuSale('${m.food_id}')" title="取消特價">取消特價</button>` : ''}
+        ${onSale ? `<span style="font-size:11px;color:#e6483c;font-weight:700;">特價中</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// 把後端的時間字串轉成 <input type="datetime-local"> 需要的格式 (yyyy-MM-ddTHH:mm)
+function toDatetimeLocalValue(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// 媽媽設定限時特價
+async function saveMenuSale(foodId) {
+  const salePrice = document.getElementById(`msp-${foodId}`).value;
+  const saleEndRaw = document.getElementById(`mse-${foodId}`).value; // yyyy-MM-ddTHH:mm
+  if (!salePrice || Number(salePrice) <= 0) {
+    showToast('請輸入大於 0 的特價金額', 'error');
+    return;
+  }
+  if (!saleEndRaw) {
+    showToast('請設定特價到期時間', 'error');
+    return;
+  }
+  const saleEnd = saleEndRaw.replace('T', ' '); // 轉成後端可解析的字串
+  const url = `${API}?action=setMenuSale&foodId=${encodeURIComponent(foodId)}&salePrice=${encodeURIComponent(salePrice)}&saleEnd=${encodeURIComponent(saleEnd)}`;
+  try {
+    await fetch(url);
+    showToast('🔥 特價已設定！', 'success');
+    await loadAll();
+    loadMamaTab('menu');
+  } catch(e) {
+    showToast('❌ 設定失敗，請重試', 'error');
+  }
+}
+
+// 媽媽取消限時特價
+async function cancelMenuSale(foodId) {
+  const url = `${API}?action=setMenuSale&foodId=${encodeURIComponent(foodId)}&salePrice=0`;
+  try {
+    await fetch(url);
+    showToast('已取消特價，恢復原價', 'warn');
+    await loadAll();
+    loadMamaTab('menu');
+  } catch(e) {
+    showToast('❌ 取消失敗，請重試', 'error');
+  }
 }
 
 // ── RENDER CHORE EDITOR ──
