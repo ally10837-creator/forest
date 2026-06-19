@@ -1055,6 +1055,7 @@ async function loadAll() {
     ]);
     allData.candice = await cRes.json();
     allData.harris  = await hRes.json();
+    localChoreStatus = {}; // 兩個孩子的最新資料都拿到了，清空本地暫存，之後畫面完全依賴後端真實資料
     updateBalanceDisplay();
     renderSubTab(currentSubTab);
   } catch(e) {
@@ -1114,7 +1115,7 @@ function renderChores(data) {
   }
 
   function choreCard(c) {
-    const status = localChoreStatus[c.task_id] || c.status || 'todo';
+    const status = localChoreStatus[c.task_id + '_' + currentChild] || c.status || 'todo';
     const isChallenge = c.challenge_active == 1;
     let rightHtml = '';
     if (status === 'todo') {
@@ -1350,13 +1351,20 @@ async function submitOrder() {
 
 // ── DECLARE CHORE ──
 async function declareChore(choreId) {
-  localChoreStatus[choreId] = 'review';
+  const childAtClick = currentChild; // 記住申報當下是哪個孩子，避免過程中使用者切換頭像導致誤判
+  localChoreStatus[choreId + '_' + childAtClick] = 'review';
   renderChores(allData[currentChild]);
   showToast('✋ 已申報！等媽媽審核～', 'warn');
   playPluck('E5', '0.05');
-  const url = `${API}?action=declareChore&choreId=${encodeURIComponent(choreId)}&childId=${currentChild}`;
-  try { await fetch(url); } catch(e) {}
-  setTimeout(() => loadAll(), 2500);
+  const url = `${API}?action=declareChore&choreId=${encodeURIComponent(choreId)}&childId=${childAtClick}`;
+  try {
+    await fetch(url);
+    await loadAll(); // API 回應後立刻刷新，不用再等 2.5 秒
+  } catch(e) {
+    delete localChoreStatus[choreId + '_' + childAtClick]; // 失敗就清掉樂觀更新的假象，畫面復原
+    showToast('❌ 申報失敗，請重試', 'error');
+    renderChores(allData[currentChild]);
+  }
 }
 
 // ── FUNDS MODAL ──
