@@ -1202,6 +1202,7 @@ function renderMyOrders(data) {
         <div class="order-info">
           <div class="order-name">${rb(o.item_name)}</div>
           <div class="order-sub">⏳ 等媽媽確認・${o.created_at || ''}</div>
+          ${o.note ? `<div style="font-size:11px;color:var(--cocoa-soft);margin-top:2px;">📝 ${rb(o.note)}</div>` : ''}
         </div>
         <div class="order-cost" style="display:flex;align-items:center;gap:3px;">${C(14)} ${o.price_coins}</div>
         <button class="order-cancel-btn" onclick="childCancelOrder('${o.id||o.order_id}','${o.price_coins}')" title="取消訂單並退幣">✕</button>
@@ -1219,6 +1220,7 @@ function renderMyOrders(data) {
           <div class="order-info">
             <div class="order-name">${rb(o.item_name)}</div>
             <div class="order-sub">${statusTxt}・${o.created_at || ''}</div>
+            ${o.note ? `<div style="font-size:11px;color:var(--cocoa-soft);margin-top:2px;">📝 ${rb(o.note)}</div>` : ''}
           </div>
           <div class="order-cost" style="display:flex;align-items:center;gap:3px;">${C(14)} ${o.price_coins}</div>
         </div>`;
@@ -1545,6 +1547,7 @@ function renderMamaOrders() {
             <div>
               <div class="review-name">${rb(o.item_name)}</div>
               <div class="review-meta">${m.name}・${o.created_at||''}</div>
+              ${o.note ? `<div style="font-size:12px;color:var(--cocoa-soft);margin-top:2px;">📝 ${rb(o.note)}</div>` : ''}
             </div>
             <div class="review-coin" style="display:flex;align-items:center;gap:3px;">${C(14)} ${o.price_coins}</div>
           </div>
@@ -1567,6 +1570,7 @@ function renderMamaOrders() {
           <div class="order-info">
             <div class="order-name">${m.avatar} ${m.name} → ${o.item_name}</div>
             <div class="order-sub">${statusTxt}・${o.created_at||''}</div>
+            ${o.note ? `<div style="font-size:11px;color:var(--cocoa-soft);margin-top:2px;">📝 ${rb(o.note)}</div>` : ''}
           </div>
           <div class="order-cost" style="display:flex;align-items:center;gap:3px;">${C(14)} ${o.price_coins}</div>
         </div>`;
