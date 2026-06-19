@@ -872,7 +872,7 @@ body {
 <!-- ═══════════════════════════════════════════ -->
 <script>
 const API = "https://script.google.com/macros/s/AKfycbyjfW6kfL0n5KAvcFXHpw2EROq6W_w6dz4RJOECYpcFPT64iSVJBoMCD5Zhve64LIxp/exec";
-const PIN = "5068"; // ← 改成你要的密碼
+const PIN = "1234"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
@@ -1711,7 +1711,16 @@ async function rejectOrder(orderId, childId, itemName, coins) {
 }
 
 // 孩子自己取消「待審核」訂單，不需確認視窗，直接退幣
+const cancellingOrders = new Set(); // 記錄正在處理中的訂單，避免連點重複送出
+
 async function childCancelOrder(orderId, coins) {
+  if (cancellingOrders.has(orderId)) return; // 已經在取消中，忽略這次點擊
+  cancellingOrders.add(orderId);
+
+  // 立刻把對應的取消按鈕 disable，避免使用者在等待回應期間連點
+  const btns = document.querySelectorAll(`[onclick*="childCancelOrder('${orderId}'"]`);
+  btns.forEach(b => { b.disabled = true; b.style.opacity = '0.4'; b.style.pointerEvents = 'none'; });
+
   const url = `${API}?action=rejectPurchase&orderId=${encodeURIComponent(orderId)}&childId=${currentChild}`;
   try {
     await fetch(url);
@@ -1719,6 +1728,8 @@ async function childCancelOrder(orderId, coins) {
     setTimeout(() => loadAll(), 800);
   } catch(e) {
     showToast('❌ 取消失敗，請重試', 'error');
+    cancellingOrders.delete(orderId); // 失敗的話允許使用者重試
+    btns.forEach(b => { b.disabled = false; b.style.opacity = ''; b.style.pointerEvents = ''; });
   }
 }
 
