@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲森林餐館</title>
+<title>🌲 森林餐館</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -426,14 +426,57 @@ body {
 }
 
 /* ── RUBY BOPOMOFO ANNOTATION ── */
-ruby { ruby-align: center; display: inline ruby; }
+/* ── RUBY BOPOMOFO ── */
+ruby {
+  ruby-align: center;
+  display: inline;  /* stay inline with text, don't break flow */
+  /* Give each ruby char a uniform width = enough for 3 bopomofo chars */
+  /* We achieve this via the rb() function wrapping each char in a span */
+}
 ruby rt {
-  font-size: 0.55em;
+  display: block;
+  font-size: 0.42em;
   font-family: 'Noto Sans TC', sans-serif;
   font-weight: 400;
-  color: #a07850;
-  line-height: 1;
+  color: #b08050;
+  line-height: 1.1;
   letter-spacing: 0;
+  user-select: none;
+  text-align: center;
+  white-space: nowrap;
+  overflow: visible;
+}
+/* Wrapper span: fixed width per CJK char so all chars equally spaced */
+.rb-char {
+  display: inline-block;
+  text-align: center;
+  min-width: 1.15em;  /* slightly wider than 1 char to fit 3-char bopomofo above */
+  vertical-align: bottom;
+}
+/* Uniform line-height for all ruby containers */
+.mascot-speech,
+.menu-name,
+.chore-name,
+.chore-diff,
+.order-name,
+.order-sub,
+.review-name {
+  line-height: 2.5;
+  word-break: break-word;
+}
+/* Welcome title */
+.w-title {
+  line-height: 2.2;
+}
+.w-title .rb-char {
+  min-width: 1em;
+}
+.w-title ruby rt {
+  font-size: 0.28em;
+}
+/* Subtitle */
+.w-subtitle {
+  line-height: 2.5;
 }
 
 
@@ -441,8 +484,7 @@ ruby rt {
   .menu-grid { grid-template-columns:1fr 1fr 1fr; }
 }
 #welcome-page {
-  position: absolute; inset: 0; z-index: 500;
-  min-height: 100vh;
+  position: fixed; inset: 0; z-index: 500;
   background: #fffdf6;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   overflow: hidden;
@@ -600,7 +642,7 @@ ruby rt {
 <!-- ═══════════════════════════════════════════ -->
 <!--              WELCOME PAGE                   -->
 <!-- ═══════════════════════════════════════════ -->
-<div id="welcome-page">
+<div id="welcome-page" style="z-index:500;">
   <!-- colourful background blobs -->
   <div class="wb" style="width:180px;height:180px;background:#ff6b9d;top:-40px;left:-50px;animation:wbob1 4s ease-in-out infinite;"></div>
   <div class="wb" style="width:140px;height:140px;background:#5bb8ff;top:60px;right:-30px;animation:wbob2 5s ease-in-out infinite;"></div>
@@ -630,36 +672,36 @@ ruby rt {
       <rect x="12" y="21" width="8" height="8" rx="2" fill="#A1887F"/>
       <rect x="15" y="23" width="2" height="4" rx="1" fill="#6D4C41"/>
     </svg>
-    <div class="w-sign-txt">🌲 <ruby>歡<rt>ㄏㄨㄢ</rt></ruby><ruby>迎<rt>ㄧㄥˊ</rt></ruby><ruby>來<rt>ㄌㄞˊ</rt></ruby><ruby>到<rt>ㄉㄠˋ</rt></ruby><br><span style="font-size:16px;color:#e06820;"><ruby>森<rt>ㄙㄣ</rt></ruby><ruby>林<rt>ㄌㄧㄣˊ</rt></ruby><ruby>餐<rt>ㄘㄢ</rt></ruby><ruby>館<rt>ㄍㄨㄢˇ</rt></ruby></span></div>
+    <div class="w-sign-txt">🌲 <span class="rb-char"><ruby>歡<rt>ㄏㄨㄢ</rt></ruby></span><span class="rb-char"><ruby>迎<rt>ㄧㄥˊ</rt></ruby></span><span class="rb-char"><ruby>來<rt>ㄌㄞˊ</rt></ruby></span><span class="rb-char"><ruby>到<rt>ㄉㄠˋ</rt></ruby></span><br><span style="font-size:16px;color:#e06820;"><span class="rb-char"><ruby>森<rt>ㄙㄣ</rt></ruby></span><span class="rb-char"><ruby>林<rt>ㄌㄧㄣˊ</rt></ruby></span><span class="rb-char"><ruby>餐<rt>ㄘㄢ</rt></ruby></span><span class="rb-char"><ruby>館<rt>ㄍㄨㄢˇ</rt></ruby></span></span></div>
   </div>
 
   <!-- big title -->
-  <div class="w-title"><ruby>用<rt>ㄩㄥˋ</rt></ruby><ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby><ruby>換<rt>ㄏㄨㄢˋ</rt></ruby><ruby>美<rt>ㄇㄟˇ</rt></ruby><ruby>食<rt>ㄕˊ</rt></ruby>🍱</div>
-  <div class="w-subtitle">做家事賺代幣·點你最愛的點心！</div>
+  <div class="w-title"><span class="rb-char"><ruby>用<rt>ㄩㄥˋ</rt></ruby></span><span class="rb-char"><ruby>代<rt>ㄉㄞˋ</rt></ruby></span><span class="rb-char"><ruby>幣<rt>ㄅㄧˋ</rt></ruby></span><span class="rb-char"><ruby>換<rt>ㄏㄨㄢˋ</rt></ruby></span><span class="rb-char"><ruby>美<rt>ㄇㄟˇ</rt></ruby></span><span class="rb-char"><ruby>食<rt>ㄕˊ</rt></ruby></span>🍱</div>
+  <div class="w-subtitle"><span class="rb-char"><ruby>做<rt>ㄗㄨㄛˋ</rt></ruby></span><span class="rb-char"><ruby>家<rt>ㄐㄧㄚ</rt></ruby></span><span class="rb-char"><ruby>事<rt>ㄕˋ</rt></ruby></span><span class="rb-char"><ruby>賺<rt>ㄓㄨㄢˋ</rt></ruby></span><span class="rb-char"><ruby>代<rt>ㄉㄞˋ</rt></ruby></span><span class="rb-char"><ruby>幣<rt>ㄅㄧˋ</rt></ruby></span> · <span class="rb-char"><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby></span><span class="rb-char"><ruby>你<rt>ㄋㄧˇ</rt></ruby></span><span class="rb-char"><ruby>最<rt>ㄗㄨㄟˋ</rt></ruby></span><span class="rb-char"><ruby>愛<rt>ㄞˋ</rt></ruby></span><span class="rb-char"><ruby>的<rt>ㄉㄜ˙</rt></ruby></span><span class="rb-char"><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby></span><span class="rb-char"><ruby>心<rt>ㄒㄧㄣ</rt></ruby></span>！</div>
 
   <!-- character parade -->
   <div class="w-chars" id="w-chars-wrap">
     <div class="w-char">
       <div id="wc-bunny"></div>
-      <div class="w-char-label"><ruby>蔓<rt>ㄇㄢˋ</rt></ruby><ruby>蔓<rt>ㄇㄢˋ</rt></ruby></div>
+      <div class="w-char-label">蔓蔓</div>
     </div>
     <div class="w-char">
       <div id="wc-hamster"></div>
-      <div class="w-char-label"><ruby>昊<rt>ㄏㄠˋ</rt></ruby><ruby>昊<rt>ㄏㄠˋ</rt></ruby></div>
+      <div class="w-char-label">昊昊</div>
     </div>
     <div class="w-char">
       <div id="wc-bear"></div>
-      <div class="w-char-label"><ruby>小<rt>ㄒㄧㄠˇ</rt></ruby><ruby>熊<rt>ㄒㄩㄥˊ</rt></ruby><ruby>大<rt>ㄉㄚˋ</rt></ruby><ruby>廚<rt>ㄔㄨˊ</rt></ruby></div>
+      <div class="w-char-label">小熊大廚</div>
     </div>
     <div class="w-char">
       <div id="wc-fox"></div>
-      <div class="w-char-label"><ruby>狐<rt>ㄏㄨˊ</rt></ruby><ruby>狸<rt>ㄌㄧˊ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby></div>
+      <div class="w-char-label">狐狸媽媽</div>
     </div>
   </div>
 
   <!-- enter button -->
   <button class="welcome-btn" onclick="enterRestaurant()">
-    🍽️ <ruby>歡<rt>ㄏㄨㄢ</rt></ruby><ruby>迎<rt>ㄧㄥˊ</rt></ruby><ruby>光<rt>ㄍㄨㄤ</rt></ruby><ruby>臨<rt>ㄌㄧㄣˊ</rt></ruby>！
+    🍽️ 歡迎光臨！
   </button>
 </div>
 <nav class="navbar">
@@ -674,11 +716,11 @@ ruby rt {
       <rect x="12" y="21" width="8" height="8" rx="2" fill="#A1887F"/>
       <rect x="15" y="23" width="2" height="4" rx="1" fill="#6D4C41"/>
     </svg>
-    <ruby>森<rt>ㄙㄣ</rt></ruby><ruby>林<rt>ㄌㄧㄣˊ</rt></ruby><ruby>餐<rt>ㄘㄢ</rt></ruby><ruby>館<rt>ㄍㄨㄢˇ</rt></ruby>
+    森林餐館
   </div>
   <div class="nav-right">
-    <button class="nav-btn active" onclick="showPage('child')" id="nav-child">🍽️ <ruby>點<rt>ㄉㄧㄢˇ</rt></ruby><ruby>餐<rt>ㄘㄢ</rt></ruby></button>
-    <button class="nav-btn" onclick="showPage('mama')" id="nav-mama">👑 <ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby></button>
+    <button class="nav-btn active" onclick="showPage('child')" id="nav-child">🍽️ 點餐</button>
+    <button class="nav-btn" onclick="showPage('mama')" id="nav-mama">👑 媽媽</button>
   </div>
 </nav>
 
@@ -691,13 +733,13 @@ ruby rt {
   <div class="child-switcher">
     <div class="child-tab active-candice" id="tab-candice" onclick="switchChild('candice')">
       <div class="avatar" id="avatar-candice" style="width:48px;height:55px;display:flex;align-items:center;justify-content:center;overflow:visible;"></div>
-      <div class="cname"><ruby>蔓<rt>ㄇㄢˋ</rt></ruby><ruby>蔓<rt>ㄇㄢˋ</rt></ruby></div>
-      <div class="cbalance" id="balance-candice"><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby>...</div>
+      <div class="cname">蔓蔓</div>
+      <div class="cbalance" id="balance-candice">載入中...</div>
     </div>
     <div class="child-tab" id="tab-harris" onclick="switchChild('harris')">
       <div class="avatar" id="avatar-harris" style="width:48px;height:55px;display:flex;align-items:center;justify-content:center;"></div>
-      <div class="cname"><ruby>昊<rt>ㄏㄠˋ</rt></ruby><ruby>昊<rt>ㄏㄠˋ</rt></ruby></div>
-      <div class="cbalance" id="balance-harris"><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby>...</div>
+      <div class="cname">昊昊</div>
+      <div class="cbalance" id="balance-harris">載入中...</div>
     </div>
   </div>
 
@@ -705,15 +747,15 @@ ruby rt {
   <div style="display:flex; gap:0; border-bottom:2px solid #e0d0c0; background:white;">
     <button onclick="switchSubTab('menu')" id="subtab-menu"
       style="flex:1;padding:11px;border:none;background:var(--mango);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;border-right:2px solid #e0d0c0;">
-      🐻 <ruby>小<rt>ㄒㄧㄠˇ</rt></ruby><ruby>熊<rt>ㄒㄩㄥˊ</rt></ruby><ruby>美<rt>ㄇㄟˇ</rt></ruby><ruby>味<rt>ㄨㄟˋ</rt></ruby><ruby>餐<rt>ㄘㄢ</rt></ruby><ruby>館<rt>ㄍㄨㄢˇ</rt></ruby>
+      🐻 小熊美味餐館
     </button>
     <button onclick="switchSubTab('chores')" id="subtab-chores"
       style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999;">
-      🦊 <ruby>狐<rt>ㄏㄨˊ</rt></ruby><ruby>狸<rt>ㄌㄧˊ</rt></ruby><ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby><ruby>布<rt>ㄅㄨˋ</rt></ruby><ruby>告<rt>ㄍㄠˋ</rt></ruby><ruby>欄<rt>ㄌㄢˊ</rt></ruby>
+      🦊 狐狸家事布告欄
     </button>
     <button onclick="switchSubTab('orders')" id="subtab-orders"
       style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999; position:relative;">
-      📋 <ruby>我<rt>ㄨㄛˇ</rt></ruby><ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby>
+      📋 我的訂單
     </button>
   </div>
 
@@ -721,11 +763,11 @@ ruby rt {
   <div id="sub-menu" class="sub-panel active">
     <div class="mascot-banner">
       <div class="mascot-bob" id="bear-mascot"></div>
-      <div class="mascot-speech"><ruby>歡<rt>ㄏㄨㄢ</rt></ruby><ruby>迎<rt>ㄧㄥˊ</rt></ruby><ruby>光<rt>ㄍㄨㄤ</rt></ruby><ruby>臨<rt>ㄌㄧㄣˊ</rt></ruby>！<ruby>今<rt>ㄐㄧㄣ</rt></ruby><ruby>天<rt>ㄊㄧㄢ</rt></ruby><ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>特<rt>ㄊㄜˋ</rt></ruby><ruby>權<rt>ㄑㄩㄢˊ</rt></ruby><ruby>與<rt>ㄩˇ</rt></ruby><ruby>現<rt>ㄒㄧㄢˋ</rt></ruby><ruby>做<rt>ㄗㄨㄛˋ</rt></ruby><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby><ruby>心<rt>ㄒㄧㄣ</rt></ruby><ruby>都<rt>ㄉㄡ</rt></ruby><ruby>熱<rt>ㄖㄜˋ</rt></ruby><ruby>騰<rt>ㄊㄥˊ</rt></ruby><ruby>騰<rt>ㄊㄥˊ</rt></ruby><ruby>地<rt>ㄉㄧˋ</rt></ruby><ruby>上<rt>ㄕㄤˋ</rt></ruby><ruby>架<rt>ㄐㄧㄚˋ</rt></ruby><ruby>囉<rt>ㄌㄨㄛ˙</rt></ruby>！<ruby>請<rt>ㄑㄧㄥˇ</rt></ruby><ruby>挑<rt>ㄊㄧㄠ</rt></ruby><ruby>選<rt>ㄒㄩㄢˇ</rt></ruby><ruby>喜<rt>ㄒㄧˇ</rt></ruby><ruby>歡<rt>ㄏㄨㄢ</rt></ruby><ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby><ruby>心<rt>ㄒㄧㄣ</rt></ruby>，<ruby>只<rt>ㄓˇ</rt></ruby><ruby>要<rt>ㄧㄠˋ</rt></ruby><ruby>存<rt>ㄘㄨㄣˊ</rt></ruby><ruby>錢<rt>ㄑㄧㄢˊ</rt></ruby><ruby>筒<rt>ㄊㄨㄥˇ</rt></ruby><ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby><ruby>足<rt>ㄗㄨˊ</rt></ruby><ruby>夠<rt>ㄍㄡˋ</rt></ruby>，<ruby>點<rt>ㄉㄧㄢˇ</rt></ruby>擊<ruby>就<rt>ㄐㄧㄡˋ</rt></ruby><ruby>能<rt>ㄋㄥˊ</rt></ruby><ruby>直<rt>ㄓˊ</rt></ruby><ruby>接<rt>ㄐㄧㄝ</rt></ruby><ruby>兌<rt>ㄉㄨㄟˋ</rt></ruby><ruby>換<rt>ㄏㄨㄢˋ</rt></ruby><ruby>享<rt>ㄒㄧㄤˇ</rt></ruby><ruby>用<rt>ㄩㄥˋ</rt></ruby><ruby>喔<rt>ㄛ˙</rt></ruby>！</div>
+      <div class="mascot-speech"><span class="rb-char"><ruby>歡<rt>ㄏㄨㄢ</rt></ruby></span><span class="rb-char"><ruby>迎<rt>ㄧㄥˊ</rt></ruby></span><span class="rb-char"><ruby>光<rt>ㄍㄨㄤ</rt></ruby></span><span class="rb-char"><ruby>臨<rt>ㄌㄧㄣˊ</rt></ruby></span>！<span class="rb-char"><ruby>今<rt>ㄐㄧㄣ</rt></ruby></span><span class="rb-char"><ruby>天<rt>ㄊㄧㄢ</rt></ruby></span><span class="rb-char"><ruby>的<rt>ㄉㄜ˙</rt></ruby></span><span class="rb-char"><ruby>特<rt>ㄊㄜˋ</rt></ruby></span><span class="rb-char"><ruby>權<rt>ㄑㄩㄢˊ</rt></ruby></span><span class="rb-char"><ruby>與<rt>ㄩˇ</rt></ruby></span><span class="rb-char"><ruby>現<rt>ㄒㄧㄢˋ</rt></ruby></span><span class="rb-char"><ruby>做<rt>ㄗㄨㄛˋ</rt></ruby></span><span class="rb-char"><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby></span><span class="rb-char"><ruby>心<rt>ㄒㄧㄣ</rt></ruby></span><span class="rb-char"><ruby>都<rt>ㄉㄡ</rt></ruby></span><span class="rb-char"><ruby>熱<rt>ㄖㄜˋ</rt></ruby></span><span class="rb-char"><ruby>騰<rt>ㄊㄥˊ</rt></ruby></span><span class="rb-char"><ruby>騰<rt>ㄊㄥˊ</rt></ruby></span><span class="rb-char"><ruby>地<rt>ㄉㄧˋ</rt></ruby></span><span class="rb-char"><ruby>上<rt>ㄕㄤˋ</rt></ruby></span><span class="rb-char"><ruby>架<rt>ㄐㄧㄚˋ</rt></ruby></span><span class="rb-char"><ruby>囉<rt>ㄌㄨㄛ˙</rt></ruby></span>！<span class="rb-char"><ruby>請<rt>ㄑㄧㄥˇ</rt></ruby></span><span class="rb-char"><ruby>挑<rt>ㄊㄧㄠ</rt></ruby></span><span class="rb-char"><ruby>選<rt>ㄒㄩㄢˇ</rt></ruby></span><span class="rb-char"><ruby>喜<rt>ㄒㄧˇ</rt></ruby></span><span class="rb-char"><ruby>歡<rt>ㄏㄨㄢ</rt></ruby></span><span class="rb-char"><ruby>的<rt>ㄉㄜ˙</rt></ruby></span><span class="rb-char"><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby></span><span class="rb-char"><ruby>心<rt>ㄒㄧㄣ</rt></ruby></span>，<span class="rb-char"><ruby>只<rt>ㄓˇ</rt></ruby></span><span class="rb-char"><ruby>要<rt>ㄧㄠˋ</rt></ruby></span><span class="rb-char"><ruby>存<rt>ㄘㄨㄣˊ</rt></ruby></span><span class="rb-char"><ruby>錢<rt>ㄑㄧㄢˊ</rt></ruby></span><span class="rb-char"><ruby>筒<rt>ㄊㄨㄥˇ</rt></ruby></span><span class="rb-char"><ruby>的<rt>ㄉㄜ˙</rt></ruby></span><span class="rb-char"><ruby>代<rt>ㄉㄞˋ</rt></ruby></span><span class="rb-char"><ruby>幣<rt>ㄅㄧˋ</rt></ruby></span><span class="rb-char"><ruby>足<rt>ㄗㄨˊ</rt></ruby></span><span class="rb-char"><ruby>夠<rt>ㄍㄡˋ</rt></ruby></span>，<span class="rb-char"><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby></span>擊<span class="rb-char"><ruby>就<rt>ㄐㄧㄡˋ</rt></ruby></span><span class="rb-char"><ruby>能<rt>ㄋㄥˊ</rt></ruby></span><span class="rb-char"><ruby>直<rt>ㄓˊ</rt></ruby></span><span class="rb-char"><ruby>接<rt>ㄐㄧㄝ</rt></ruby></span><span class="rb-char"><ruby>兌<rt>ㄉㄨㄟˋ</rt></ruby></span><span class="rb-char"><ruby>換<rt>ㄏㄨㄢˋ</rt></ruby></span><span class="rb-char"><ruby>享<rt>ㄒㄧㄤˇ</rt></ruby></span><span class="rb-char"><ruby>用<rt>ㄩㄥˋ</rt></ruby></span><span class="rb-char"><ruby>喔<rt>ㄛ˙</rt></ruby></span>！</div>
     </div>
-    <div class="section-title">🐻 <ruby>小<rt>ㄒㄧㄠˇ</rt></ruby><ruby>熊<rt>ㄒㄩㄥˊ</rt></ruby><ruby>大<rt>ㄉㄚˋ</rt></ruby><ruby>廚<rt>ㄔㄨˊ</rt></ruby><ruby>今<rt>ㄐㄧㄣ</rt></ruby><ruby>日<rt>ㄖˋ</rt></ruby><ruby>菜<rt>ㄘㄞˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby> <span class="pill" id="menu-count"><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby></span></div>
+    <div class="section-title">🐻 小熊大廚今日菜單 <span class="pill" id="menu-count">載入中</span></div>
     <div class="menu-grid" id="menu-grid">
-      <div class="loading-spinner"><div class="spinner"></div><div><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>菜<rt>ㄘㄞˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby>...</div></div>
+      <div class="loading-spinner"><div class="spinner"></div><div>載入菜單...</div></div>
     </div>
   </div>
 
@@ -733,25 +775,25 @@ ruby rt {
   <div id="sub-chores" class="sub-panel">
     <div class="mascot-banner">
       <div class="mascot-bob mascot-bob-delay" id="fox-mascot"></div>
-      <div class="mascot-speech mascot-speech-delay"><ruby>孩<rt>ㄏㄞˊ</rt></ruby><ruby>子<rt>ㄗˇ</rt></ruby><ruby>們<rt>ㄇㄣ˙</rt></ruby>！<ruby>今<rt>ㄐㄧㄣ</rt></ruby><ruby>天<rt>ㄊㄧㄢ</rt></ruby><ruby>有<rt>ㄧㄡˇ</rt></ruby><ruby>沒<rt>ㄇㄟˊ</rt></ruby><ruby>有<rt>ㄧㄡˇ</rt></ruby><ruby>幫<rt>ㄅㄤ</rt></ruby><ruby>忙<rt>ㄇㄤˊ</rt></ruby><ruby>分<rt>ㄈㄣ</rt></ruby><ruby>擔<rt>ㄉㄢ</rt></ruby><ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby>呀？<ruby>認<rt>ㄖㄣˋ</rt></ruby><ruby>真<rt>ㄓㄣ</rt></ruby><ruby>做<rt>ㄗㄨㄛˋ</rt></ruby><ruby>完<rt>ㄨㄢˊ</rt></ruby><ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby><ruby>後<rt>ㄏㄡˋ</rt></ruby><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby>擊<ruby>申<rt>ㄕㄣ</rt></ruby><ruby>報<rt>ㄅㄠˋ</rt></ruby>，<ruby>等<rt>ㄉㄥˇ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>在<rt>ㄗㄞˋ</rt></ruby><ruby>右<rt>ㄧㄡˋ</rt></ruby><ruby>側<rt>ㄘㄜˋ</rt></ruby><ruby>後<rt>ㄏㄡˋ</rt></ruby><ruby>台<rt>ㄊㄞˊ</rt></ruby><ruby>勾<rt>ㄍㄡ</rt></ruby><ruby>選<rt>ㄒㄩㄢˇ</rt></ruby><ruby>核<rt>ㄏㄜˊ</rt></ruby><ruby>准<rt>ㄓㄨㄣˇ</rt></ruby>，<ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby><ruby>就<rt>ㄐㄧㄡˋ</rt></ruby><ruby>會<rt>ㄏㄨㄟˋ</rt></ruby>『<ruby>叮<rt>ㄉㄧㄥ</rt></ruby><ruby>咚<rt>ㄉㄨㄥ</rt></ruby>』<ruby>飛<rt>ㄈㄟ</rt></ruby><ruby>進<rt>ㄐㄧㄣˋ</rt></ruby><ruby>存<rt>ㄘㄨㄣˊ</rt></ruby><ruby>錢<rt>ㄑㄧㄢˊ</rt></ruby><ruby>筒<rt>ㄊㄨㄥˇ</rt></ruby><ruby>囉<rt>ㄌㄨㄛ˙</rt></ruby>！</div>
+      <div class="mascot-speech mascot-speech-delay"><span class="rb-char"><ruby>孩<rt>ㄏㄞˊ</rt></ruby></span><span class="rb-char"><ruby>子<rt>ㄗˇ</rt></ruby></span><span class="rb-char"><ruby>們<rt>ㄇㄣ˙</rt></ruby></span>！<span class="rb-char"><ruby>今<rt>ㄐㄧㄣ</rt></ruby></span><span class="rb-char"><ruby>天<rt>ㄊㄧㄢ</rt></ruby></span><span class="rb-char"><ruby>有<rt>ㄧㄡˇ</rt></ruby></span><span class="rb-char"><ruby>沒<rt>ㄇㄟˊ</rt></ruby></span><span class="rb-char"><ruby>有<rt>ㄧㄡˇ</rt></ruby></span><span class="rb-char"><ruby>幫<rt>ㄅㄤ</rt></ruby></span><span class="rb-char"><ruby>忙<rt>ㄇㄤˊ</rt></ruby></span><span class="rb-char"><ruby>分<rt>ㄈㄣ</rt></ruby></span><span class="rb-char"><ruby>擔<rt>ㄉㄢ</rt></ruby></span><span class="rb-char"><ruby>家<rt>ㄐㄧㄚ</rt></ruby></span><span class="rb-char"><ruby>事<rt>ㄕˋ</rt></ruby></span>呀？<span class="rb-char"><ruby>認<rt>ㄖㄣˋ</rt></ruby></span><span class="rb-char"><ruby>真<rt>ㄓㄣ</rt></ruby></span><span class="rb-char"><ruby>做<rt>ㄗㄨㄛˋ</rt></ruby></span><span class="rb-char"><ruby>完<rt>ㄨㄢˊ</rt></ruby></span><span class="rb-char"><ruby>家<rt>ㄐㄧㄚ</rt></ruby></span><span class="rb-char"><ruby>事<rt>ㄕˋ</rt></ruby></span><span class="rb-char"><ruby>後<rt>ㄏㄡˋ</rt></ruby></span><span class="rb-char"><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby></span>擊<span class="rb-char"><ruby>申<rt>ㄕㄣ</rt></ruby></span><span class="rb-char"><ruby>報<rt>ㄅㄠˋ</rt></ruby></span>，<span class="rb-char"><ruby>等<rt>ㄉㄥˇ</rt></ruby></span><span class="rb-char"><ruby>媽<rt>ㄇㄚ</rt></ruby></span><span class="rb-char"><ruby>媽<rt>ㄇㄚ</rt></ruby></span><span class="rb-char"><ruby>在<rt>ㄗㄞˋ</rt></ruby></span><span class="rb-char"><ruby>右<rt>ㄧㄡˋ</rt></ruby></span><span class="rb-char"><ruby>側<rt>ㄘㄜˋ</rt></ruby></span><span class="rb-char"><ruby>後<rt>ㄏㄡˋ</rt></ruby></span><span class="rb-char"><ruby>台<rt>ㄊㄞˊ</rt></ruby></span><span class="rb-char"><ruby>勾<rt>ㄍㄡ</rt></ruby></span><span class="rb-char"><ruby>選<rt>ㄒㄩㄢˇ</rt></ruby></span><span class="rb-char"><ruby>核<rt>ㄏㄜˊ</rt></ruby></span><span class="rb-char"><ruby>准<rt>ㄓㄨㄣˇ</rt></ruby></span>，<span class="rb-char"><ruby>代<rt>ㄉㄞˋ</rt></ruby></span><span class="rb-char"><ruby>幣<rt>ㄅㄧˋ</rt></ruby></span><span class="rb-char"><ruby>就<rt>ㄐㄧㄡˋ</rt></ruby></span><span class="rb-char"><ruby>會<rt>ㄏㄨㄟˋ</rt></ruby></span>『<span class="rb-char"><ruby>叮<rt>ㄉㄧㄥ</rt></ruby></span><span class="rb-char"><ruby>咚<rt>ㄉㄨㄥ</rt></ruby></span>』<span class="rb-char"><ruby>飛<rt>ㄈㄟ</rt></ruby></span><span class="rb-char"><ruby>進<rt>ㄐㄧㄣˋ</rt></ruby></span><span class="rb-char"><ruby>存<rt>ㄘㄨㄣˊ</rt></ruby></span><span class="rb-char"><ruby>錢<rt>ㄑㄧㄢˊ</rt></ruby></span><span class="rb-char"><ruby>筒<rt>ㄊㄨㄥˇ</rt></ruby></span><span class="rb-char"><ruby>囉<rt>ㄌㄨㄛ˙</rt></ruby></span>！</div>
     </div>
-    <div class="section-title">🦊 <ruby>狐<rt>ㄏㄨˊ</rt></ruby><ruby>狸<rt>ㄌㄧˊ</rt></ruby><ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby><ruby>布<rt>ㄅㄨˋ</rt></ruby><ruby>告<rt>ㄍㄠˋ</rt></ruby><ruby>欄<rt>ㄌㄢˊ</rt></ruby> <span class="pill" id="chore-count"><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby></span></div>
+    <div class="section-title">🦊 狐狸家事布告欄 <span class="pill" id="chore-count">載入中</span></div>
     <div class="chore-list" id="chore-list">
-      <div class="loading-spinner"><div class="spinner"></div><div><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>任<rt>ㄖㄣˋ</rt></ruby><ruby>務<rt>ㄨˋ</rt></ruby>...</div></div>
+      <div class="loading-spinner"><div class="spinner"></div><div>載入任務...</div></div>
     </div>
   </div>
 
   <!-- SUB TAB: ORDERS -->
   <div id="sub-orders" class="sub-panel">
-    <div class="section-title">📋 <ruby>我<rt>ㄨㄛˇ</rt></ruby><ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby>記<ruby>錄<rt>ㄌㄨˋ</rt></ruby></div>
+    <div class="section-title">📋 我的訂單記錄</div>
     <div id="orders-list">
-      <div class="loading-spinner"><div class="spinner"></div><div><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby>...</div></div>
+      <div class="loading-spinner"><div class="spinner"></div><div>載入訂單...</div></div>
     </div>
   </div>
 
   <!-- Cart FAB -->
   <button class="cart-fab" onclick="openCart()" id="cart-fab" style="display:none;">
-    🛒 <ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby> <span class="cart-count" id="cart-count">0</span>
+    🛒 購物車 <span class="cart-count" id="cart-count">0</span>
   </button>
 </div>
 
@@ -762,10 +804,10 @@ ruby rt {
   <!-- Lock Screen -->
   <div class="mama-lock" id="mama-lock">
     <div class="mama-lock-icon">👑</div>
-    <div class="mama-lock-title"><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>管<rt>ㄍㄨㄢˇ</rt></ruby><ruby>理<rt>ㄌㄧˇ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby><ruby>心<rt>ㄒㄧㄣ</rt></ruby></div>
+    <div class="mama-lock-title">媽媽管理中心</div>
     <div class="mama-lock-box">
       <input type="password" class="pin-input" id="pin-input" maxlength="4" placeholder="••••" inputmode="numeric">
-      <button class="pin-btn" onclick="checkPin()"><ruby>進<rt>ㄐㄧㄣˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>後<rt>ㄏㄡˋ</rt></ruby><ruby>台<rt>ㄊㄞˊ</rt></ruby> →</button>
+      <button class="pin-btn" onclick="checkPin()">進入後台 →</button>
       <div class="pin-err" id="pin-err"></div>
     </div>
   </div>
@@ -774,43 +816,43 @@ ruby rt {
   <div class="mama-content" id="mama-content">
     <!-- Mama Tabs -->
     <div class="mama-tabs">
-      <button class="mama-tab-btn active" onclick="switchMamaTab('approve')" id="mtab-approve">✋ <ruby>審<rt>ㄕㄣˇ</rt></ruby><ruby>核<rt>ㄏㄜˊ</rt></ruby></button>
-      <button class="mama-tab-btn" onclick="switchMamaTab('orders')"  id="mtab-orders">🛒 <ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby></button>
-      <button class="mama-tab-btn" onclick="switchMamaTab('coins')"   id="mtab-coins">🪙 <ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby></button>
-      <button class="mama-tab-btn" onclick="switchMamaTab('menu-edit')" id="mtab-menu-edit">🍱 <ruby>菜<rt>ㄘㄞˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby></button>
-      <button class="mama-tab-btn" onclick="switchMamaTab('chore-edit')" id="mtab-chore-edit">🐱 <ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby></button>
+      <button class="mama-tab-btn active" onclick="switchMamaTab('approve')" id="mtab-approve">✋ 審核</button>
+      <button class="mama-tab-btn" onclick="switchMamaTab('orders')"  id="mtab-orders">🛒 訂單</button>
+      <button class="mama-tab-btn" onclick="switchMamaTab('coins')"   id="mtab-coins">🪙 代幣</button>
+      <button class="mama-tab-btn" onclick="switchMamaTab('menu-edit')" id="mtab-menu-edit">🍱 菜單</button>
+      <button class="mama-tab-btn" onclick="switchMamaTab('chore-edit')" id="mtab-chore-edit">🐱 家事</button>
     </div>
     <!-- 自動重整倒數 -->
     <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 14px; font-size:11px; font-weight:700; color:var(--cocoa-soft); background:white; border-bottom:1px solid #eee;">
       <button onclick="showPage('child')" style="background:var(--cocoa);color:white;border:none;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px;">
-        ← 返回<ruby>點<rt>ㄉㄧㄢˇ</rt></ruby><ruby>餐<rt>ㄘㄢ</rt></ruby>
+        ← 返回點餐
       </button>
       <div>
-        <ruby>自<rt>ㄗˋ</rt></ruby><ruby>動<rt>ㄉㄨㄥˋ</rt></ruby><ruby>更<rt>ㄍㄥ</rt></ruby><ruby>新<rt>ㄒㄧㄣ</rt></ruby> <span id="refresh-indicator" style="font-weight:800;">🔄 30s</span>
+        自動更新 <span id="refresh-indicator" style="font-weight:800;">🔄 30s</span>
         &nbsp;
-        <button onclick="manualRefresh()" style="background:var(--mango);border:1px solid var(--cocoa);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;"><ruby>立<rt>ㄌㄧˋ</rt></ruby><ruby>即<rt>ㄐㄧˊ</rt></ruby><ruby>更<rt>ㄍㄥ</rt></ruby><ruby>新<rt>ㄒㄧㄣ</rt></ruby></button>
+        <button onclick="manualRefresh()" style="background:var(--mango);border:1px solid var(--cocoa);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">立即更新</button>
       </div>
     </div>
 
     <!-- TAB: APPROVE CHORES -->
     <div class="mama-tab-content active" id="mtab-content-approve">
       <div class="mama-stats" id="approve-stats"></div>
-      <div class="section-title" style="padding-top:14px;">⏳ <ruby>待<rt>ㄉㄞˋ</rt></ruby><ruby>審<rt>ㄕㄣˇ</rt></ruby><ruby>核<rt>ㄏㄜˊ</rt></ruby><ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby> <span class="pill" id="pending-count">0</span></div>
-      <div id="approve-list"><div class="loading-spinner"><div class="spinner"></div><div><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby>...</div></div></div>
+      <div class="section-title" style="padding-top:14px;">⏳ 待審核家事 <span class="pill" id="pending-count">0</span></div>
+      <div id="approve-list"><div class="loading-spinner"><div class="spinner"></div><div>載入中...</div></div></div>
     </div>
 
     <!-- TAB: ORDERS -->
     <div class="mama-tab-content" id="mtab-content-orders">
-      <div class="section-title" style="padding-top:14px;">🛒 <ruby>點<rt>ㄉㄧㄢˇ</rt></ruby><ruby>餐<rt>ㄘㄢ</rt></ruby><ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby><ruby>管<rt>ㄍㄨㄢˇ</rt></ruby><ruby>理<rt>ㄌㄧˇ</rt></ruby></div>
-      <div id="mama-orders-list"><div class="loading-spinner"><div class="spinner"></div><div><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby>...</div></div></div>
+      <div class="section-title" style="padding-top:14px;">🛒 點餐訂單管理</div>
+      <div id="mama-orders-list"><div class="loading-spinner"><div class="spinner"></div><div>載入中...</div></div></div>
     </div>
 
     <!-- TAB: COINS -->
     <div class="mama-tab-content" id="mtab-content-coins">
-      <div class="section-title" style="padding-top:14px;">🪙 <ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby><ruby>帳<rt>ㄓㄤˋ</rt></ruby>戶<ruby>管<rt>ㄍㄨㄢˇ</rt></ruby><ruby>理<rt>ㄌㄧˇ</rt></ruby></div>
+      <div class="section-title" style="padding-top:14px;">🪙 代幣帳戶管理</div>
       <div class="balance-grid" id="balance-grid"></div>
       <div style="padding:0 12px;">
-        <div style="font-size:12px;color:var(--cocoa-soft);margin-top:4px;font-weight:600;">💡 <ruby>輸<rt>ㄕㄨ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>數<rt>ㄕㄨˋ</rt></ruby><ruby>量<rt>ㄌㄧㄤˋ</rt></ruby><ruby>後<rt>ㄏㄡˋ</rt></ruby><ruby>點<rt>ㄉㄧㄢˇ</rt></ruby>＋給<ruby>或<rt>ㄏㄨㄛˋ</rt></ruby>－<ruby>扣<rt>ㄎㄡˋ</rt></ruby>，<ruby>會<rt>ㄏㄨㄟˋ</rt></ruby><ruby>即<rt>ㄐㄧˊ</rt></ruby><ruby>時<rt>ㄕˊ</rt></ruby><ruby>更<rt>ㄍㄥ</rt></ruby><ruby>新<rt>ㄒㄧㄣ</rt></ruby> Google Sheets</div>
+        <div style="font-size:12px;color:var(--cocoa-soft);margin-top:4px;font-weight:600;">💡 輸入數量後點＋給或－扣，會即時更新 Google Sheets</div>
       </div>
     </div>
 
@@ -818,10 +860,10 @@ ruby rt {
     <div class="mama-tab-content" id="mtab-content-menu-edit">
       <div class="sheet-section">
         <div class="sheet-title">
-          🍱 <ruby>菜<rt>ㄘㄞˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby><ruby>管<rt>ㄍㄨㄢˇ</rt></ruby><ruby>理<rt>ㄌㄧˇ</rt></ruby>（<ruby>連<rt>ㄌㄧㄢˊ</rt></ruby><ruby>動<rt>ㄉㄨㄥˋ</rt></ruby> Google Sheets MenuList）
-          <button class="add-row-btn" onclick="addMenuItem()">＋ <ruby>新<rt>ㄒㄧㄣ</rt></ruby><ruby>增<rt>ㄗㄥ</rt></ruby>品項</button>
+          🍱 菜單管理（連動 Google Sheets MenuList）
+          <button class="add-row-btn" onclick="addMenuItem()">＋ 新增品項</button>
         </div>
-        <div id="menu-editor"><div class="loading-spinner"><div class="spinner"></div><div><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby>...</div></div></div>
+        <div id="menu-editor"><div class="loading-spinner"><div class="spinner"></div><div>載入中...</div></div></div>
       </div>
     </div>
 
@@ -829,10 +871,10 @@ ruby rt {
     <div class="mama-tab-content" id="mtab-content-chore-edit">
       <div class="sheet-section">
         <div class="sheet-title">
-          🐱 <ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby><ruby>任<rt>ㄖㄣˋ</rt></ruby><ruby>務<rt>ㄨˋ</rt></ruby><ruby>管<rt>ㄍㄨㄢˇ</rt></ruby><ruby>理<rt>ㄌㄧˇ</rt></ruby>（<ruby>連<rt>ㄌㄧㄢˊ</rt></ruby><ruby>動<rt>ㄉㄨㄥˋ</rt></ruby> Google Sheets ChoreList）
-          <button class="add-row-btn" onclick="addChoreItem()">＋ <ruby>新<rt>ㄒㄧㄣ</rt></ruby><ruby>增<rt>ㄗㄥ</rt></ruby><ruby>任<rt>ㄖㄣˋ</rt></ruby><ruby>務<rt>ㄨˋ</rt></ruby></button>
+          🐱 家事任務管理（連動 Google Sheets ChoreList）
+          <button class="add-row-btn" onclick="addChoreItem()">＋ 新增任務</button>
         </div>
-        <div id="chore-editor"><div class="loading-spinner"><div class="spinner"></div><div><ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby>...</div></div></div>
+        <div id="chore-editor"><div class="loading-spinner"><div class="spinner"></div><div>載入中...</div></div></div>
       </div>
     </div>
   </div>
@@ -844,12 +886,12 @@ ruby rt {
 <div class="modal-overlay" id="cart-modal">
   <div class="modal-box">
     <div class="modal-title">
-      🛒 <ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby>
+      🛒 購物車
       <button class="modal-close" onclick="closeCart()">✕</button>
     </div>
     <div id="cart-items"></div>
     <div class="cart-total" id="cart-total"></div>
-    <button class="submit-order-btn" onclick="submitOrder()" id="submit-order-btn">🍽️ <ruby>送<rt>ㄙㄨㄥˋ</rt></ruby><ruby>出<rt>ㄔㄨ</rt></ruby><ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby>，<ruby>等<rt>ㄉㄥˇ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>確<rt>ㄑㄩㄝˋ</rt></ruby><ruby>認<rt>ㄖㄣˋ</rt></ruby>！</button>
+    <button class="submit-order-btn" onclick="submitOrder()" id="submit-order-btn">🍽️ 送出訂單，等媽媽確認！</button>
   </div>
 </div>
 
@@ -859,9 +901,9 @@ ruby rt {
 <div class="funds-modal" id="funds-modal">
   <div class="funds-box">
     <span class="funds-emoji">🐹😭</span>
-    <div class="funds-title"><ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby><ruby>不<rt>ㄅㄨˋ</rt></ruby><ruby>夠<rt>ㄍㄡˋ</rt></ruby><ruby>喔<rt>ㄛ˙</rt></ruby>！</div>
-    <div class="funds-msg" id="funds-msg"><ruby>存<rt>ㄘㄨㄣˊ</rt></ruby><ruby>錢<rt>ㄑㄧㄢˊ</rt></ruby><ruby>筒<rt>ㄊㄨㄥˇ</rt></ruby><ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>還<ruby>不<rt>ㄅㄨˋ</rt></ruby><ruby>足<rt>ㄗㄨˊ</rt></ruby>！<br><ruby>快<rt>ㄎㄨㄞˋ</rt></ruby><ruby>去<rt>ㄑㄩˋ</rt></ruby><ruby>做<rt>ㄗㄨㄛˋ</rt></ruby><ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby><ruby>賺<rt>ㄓㄨㄢˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>吧！</div>
-    <button class="funds-close" onclick="closeFundsModal()"><ruby>好<rt>ㄏㄠˇ</rt></ruby>！<ruby>去<rt>ㄑㄩˋ</rt></ruby><ruby>賺<rt>ㄓㄨㄢˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby> 🚀</button>
+    <div class="funds-title">代幣不夠喔！</div>
+    <div class="funds-msg" id="funds-msg">存錢筒代幣還不足！<br>快去做家事賺幣吧！</div>
+    <button class="funds-close" onclick="closeFundsModal()">好！去賺幣 🚀</button>
   </div>
 </div>
 
@@ -872,17 +914,28 @@ ruby rt {
 <!-- ═══════════════════════════════════════════ -->
 <script>
 const API = "https://script.google.com/macros/s/AKfycbyjfW6kfL0n5KAvcFXHpw2EROq6W_w6dz4RJOECYpcFPT64iSVJBoMCD5Zhve64LIxp/exec";
-const PIN = "5068"; // ← 改成你要的密碼
+const PIN = "1234"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
 // ── BOPOMOFO RUBY – auto-annotates any Chinese text ──
-const BOPO = {'森':'ㄙㄣ','林':'ㄌㄧㄣˊ','餐':'ㄘㄢ','館':'ㄍㄨㄢˇ','用':'ㄩㄥˋ','代':'ㄉㄞˋ','幣':'ㄅㄧˋ','換':'ㄏㄨㄢˋ','美':'ㄇㄟˇ','食':'ㄕˊ','做':'ㄗㄨㄛˋ','家':'ㄐㄧㄚ','事':'ㄕˋ','賺':'ㄓㄨㄢˋ','你':'ㄋㄧˇ','最':'ㄗㄨㄟˋ','愛':'ㄞˋ','的':'ㄉㄜ˙','心':'ㄒㄧㄣ','點':'ㄉㄧㄢˇ','歡':'ㄏㄨㄢ','迎':'ㄧㄥˊ','光':'ㄍㄨㄤ','臨':'ㄌㄧㄣˊ','來':'ㄌㄞˊ','到':'ㄉㄠˋ','媽':'ㄇㄚ','蔓':'ㄇㄢˋ','昊':'ㄏㄠˋ','餘':'ㄩˊ','額':'ㄜˊ','載':'ㄓㄞˋ','入':'ㄖㄨˋ','中':'ㄓㄨㄥ','小':'ㄒㄧㄠˇ','熊':'ㄒㄩㄥˊ','味':'ㄨㄟˋ','狐':'ㄏㄨˊ','狸':'ㄌㄧˊ','布':'ㄅㄨˋ','告':'ㄍㄠˋ','欄':'ㄌㄢˊ','我':'ㄨㄛˇ','訂':'ㄉㄧㄥˋ','單':'ㄉㄢ','今':'ㄐㄧㄣ','天':'ㄊㄧㄢ','特':'ㄊㄜˋ','權':'ㄑㄩㄢˊ','與':'ㄩˇ','現':'ㄒㄧㄢˋ','都':'ㄉㄡ','熱':'ㄖㄜˋ','騰':'ㄊㄥˊ','地':'ㄉㄧˋ','上':'ㄕㄤˋ','架':'ㄐㄧㄚˋ','囉':'ㄌㄨㄛ˙','請':'ㄑㄧㄥˇ','挑':'ㄊㄧㄠ','選':'ㄒㄩㄢˇ','喜':'ㄒㄧˇ','只':'ㄓˇ','要':'ㄧㄠˋ','存':'ㄘㄨㄣˊ','錢':'ㄑㄧㄢˊ','筒':'ㄊㄨㄥˇ','夠':'ㄍㄡˋ','就':'ㄐㄧㄡˋ','能':'ㄋㄥˊ','直':'ㄓˊ','接':'ㄐㄧㄝ','兌':'ㄉㄨㄟˋ','享':'ㄒㄧㄤˇ','喔':'ㄛ˙','孩':'ㄏㄞˊ','子':'ㄗˇ','們':'ㄇㄣ˙','有':'ㄧㄡˇ','沒':'ㄇㄟˊ','幫':'ㄅㄤ','忙':'ㄇㄤˊ','分':'ㄈㄣ','擔':'ㄉㄢ','認':'ㄖㄣˋ','真':'ㄓㄣ','完':'ㄨㄢˊ','後':'ㄏㄡˋ','申':'ㄕㄣ','報':'ㄅㄠˋ','等':'ㄉㄥˇ','在':'ㄗㄞˋ','右':'ㄧㄡˋ','側':'ㄘㄜˋ','台':'ㄊㄞˊ','勾':'ㄍㄡ','核':'ㄏㄜˊ','准':'ㄓㄨㄣˇ','會':'ㄏㄨㄟˋ','叮':'ㄉㄧㄥ','咚':'ㄉㄨㄥ','飛':'ㄈㄟ','進':'ㄐㄧㄣˋ','大':'ㄉㄚˋ','廚':'ㄔㄨˊ','日':'ㄖˋ','菜':'ㄘㄞˋ','已':'ㄧˇ','售':'ㄕㄡˋ','剩':'ㄕㄥˋ','加':'ㄐㄧㄚ','購':'ㄍㄡˋ','物':'ㄨˋ','車':'ㄔㄜ','任':'ㄖㄣˋ','務':'ㄨˋ','難':'ㄋㄢˊ','易':'ㄧˋ','度':'ㄉㄨˋ','審':'ㄕㄣˇ','領':'ㄌㄧㄥˇ','賞':'ㄕㄤˇ','歷':'ㄌㄧˋ','史':'ㄕˇ','紀':'ㄐㄧˋ','錄':'ㄌㄨˋ','出':'ㄔㄨ','取':'ㄑㄩˇ','消':'ㄒㄧㄠ','退':'ㄊㄨㄟˋ','總':'ㄗㄨㄥˇ','計':'ㄐㄧˋ','結':'ㄐㄧㄝˊ','帳':'ㄓㄤˋ','不':'ㄅㄨˋ','足':'ㄗㄨˊ','先':'ㄒㄧㄢ','去':'ㄑㄩˋ','確':'ㄑㄩㄝˋ','定':'ㄉㄧㄥˋ','送':'ㄙㄨㄥˋ','密':'ㄇㄧˋ','碼':'ㄇㄚˇ','輸':'ㄕㄨ','新':'ㄒㄧㄣ','增':'ㄗㄥ','刪':'ㄕㄢ','除':'ㄔㄨˊ','編':'ㄅㄧㄢ','輯':'ㄐㄧˊ','保':'ㄅㄠˇ','名':'ㄇㄧㄥˊ','稱':'ㄔㄥ','價':'ㄐㄧㄚˋ','格':'ㄍㄜˊ','庫':'ㄎㄨˋ','照':'ㄓㄠˋ','片':'ㄆㄧㄢˋ','連':'ㄌㄧㄢˊ','獎':'ㄐㄧㄤˇ','勵':'ㄌㄧˋ','一':'ㄧ','二':'ㄦˋ','三':'ㄙㄢ','四':'ㄙˋ','五':'ㄨˇ','資':'ㄗ','料':'ㄌㄧㄠˋ','買':'ㄇㄞˇ','待':'ㄉㄞˋ','登':'ㄉㄥ','管':'ㄍㄨㄢˇ','理':'ㄌㄧˇ','通':'ㄊㄨㄥ','知':'ㄓ','拒':'ㄐㄩˋ','絕':'ㄐㄩㄝˊ','是':'ㄕˋ','否':'ㄈㄡˇ','調':'ㄉㄧㄠˋ','整':'ㄓㄥˇ','贈':'ㄗㄥˋ','扣':'ㄎㄡˋ','刷':'ㄕㄨㄚ','自':'ㄗˋ','動':'ㄉㄨㄥˋ','更':'ㄍㄥ','秒':'ㄇㄧㄠˇ','按':'ㄢˋ','鈕':'ㄋㄧㄡˇ','快':'ㄎㄨㄞˋ','繼':'ㄐㄧˋ','續':'ㄒㄩˋ','努':'ㄋㄨˇ','力':'ㄌㄧˋ','成':'ㄔㄥˊ','功':'ㄍㄨㄥ','失':'ㄕ','敗':'ㄅㄞˋ','網':'ㄨㄤˇ','路':'ㄌㄨˋ','檢':'ㄐㄧㄢˇ','查':'ㄔㄚˊ','好':'ㄏㄠˇ','棒':'ㄅㄤˋ','很':'ㄏㄣˇ','開':'ㄎㄞ','掃':'ㄙㄠˇ','描':'ㄇㄧㄠˊ','立':'ㄌㄧˋ','即':'ㄐㄧˊ','缺':'ㄑㄩㄝ','貨':'ㄏㄨㄛˋ','或':'ㄏㄨㄛˋ','以':'ㄧˇ','和':'ㄏㄜˊ','這':'ㄓㄜˋ','那':'ㄋㄚˋ','數':'ㄕㄨˋ','量':'ㄌㄧㄤˋ','金':'ㄐㄧㄣ','幾':'ㄐㄧˇ','個':'ㄍㄜˋ','張':'ㄓㄤ','時':'ㄕˊ','間':'ㄐㄧㄢ','每':'ㄇㄟˇ','次':'ㄘˋ','重':'ㄓㄨㄥˋ','號':'ㄏㄠˋ','收':'ㄕㄡ','作':'ㄗㄨㄛˋ','早':'ㄗㄠˇ','午':'ㄨˇ','晚':'ㄨㄢˇ','飯':'ㄈㄢˋ','洗':'ㄒㄧˇ','碗':'ㄨㄢˇ','掃':'ㄙㄠˇ','地':'ㄉㄧˋ','拖':'ㄊㄨㄛ','房':'ㄈㄤˊ','間':'ㄐㄧㄢ','整':'ㄓㄥˇ','理':'ㄌㄧˇ','床':'ㄔㄨㄤˊ','倒':'ㄉㄠˋ','垃':'ㄌㄜˋ','圾':'ㄙㄜˋ','澆':'ㄐㄧㄠ','花':'ㄏㄨㄚ','貓':'ㄇㄠ','狗':'ㄍㄡˇ','兔':'ㄊㄨˋ','鼠':'ㄕㄨˇ','熊':'ㄒㄩㄥˊ','狸':'ㄌㄧˊ','水':'ㄕㄨㄟˇ','果':'ㄍㄨㄛˇ','蛋':'ㄉㄢˋ','糕':'ㄍㄠ','餅':'ㄅㄧㄥˇ','乾':'ㄍㄢ','糖':'ㄊㄤˊ','巧':'ㄑㄧㄠˇ','克':'ㄎㄜˋ','力':'ㄌㄧˋ','冰':'ㄅㄧㄥ','淇':'ㄑㄧˊ','淋':'ㄌㄧㄣˊ','奶':'ㄋㄞˇ','茶':'ㄔㄚˊ','果':'ㄍㄨㄛˇ','汁':'ㄓ','飲':'ㄧㄣˇ','料':'ㄌㄧㄠˋ','包':'ㄅㄠ','麵':'ㄇㄧㄢˋ','米':'ㄇㄧˇ','雞':'ㄐㄧ','魚':'ㄩˊ','肉':'ㄖㄡˋ','菜':'ㄘㄞˋ','湯':'ㄊㄤ','飯':'ㄈㄢˋ','吐':'ㄊㄨˇ','司':'ㄙ','鬆':'ㄙㄨㄥ','餅':'ㄅㄧㄥˇ','布':'ㄅㄨˋ','丁':'ㄉㄧㄥ','果':'ㄍㄨㄛˇ','凍':'ㄉㄨㄥˋ','薯':'ㄕㄨˇ','條':'ㄊㄧㄠˊ','薄':'ㄅㄛˊ','荷':'ㄏㄜˊ','棒':'ㄅㄤˋ','棒':'ㄅㄤˋ','糖':'ㄊㄤˊ','軟':'ㄖㄨㄢˇ','糖':'ㄊㄤˊ','看':'ㄎㄢˋ','書':'ㄕㄨ','電':'ㄉㄧㄢˋ','視':'ㄕˋ','遊':'ㄧㄡˊ','戲':'ㄒㄧˋ','電':'ㄉㄧㄢˋ','影':'ㄧㄥˇ','玩':'ㄨㄢˊ','公':'ㄍㄨㄥ','園':'ㄩㄢˊ','買':'ㄇㄞˇ','東':'ㄉㄨㄥ','西':'ㄒㄧ','特':'ㄊㄜˋ','別':'ㄅㄧㄝˊ','活':'ㄏㄨㄛˊ','動':'ㄉㄨㄥˋ','睡':'ㄕㄨㄟˋ','覺':'ㄐㄧㄠˋ','晚':'ㄨㄢˇ','點':'ㄉㄧㄢˇ'};
+const BOPO = {'一':'ㄧ','二':'ㄦˋ','三':'ㄙㄢ','四':'ㄙˋ','五':'ㄨˇ','六':'ㄌㄧㄡˋ','七':'ㄑㄧ','八':'ㄅㄚ','九':'ㄐㄧㄡˇ','十':'ㄕˊ','百':'ㄅㄞˇ','千':'ㄑㄧㄢ','萬':'ㄨㄢˋ','億':'ㄧˋ','零':'ㄌㄧㄥˊ','兩':'ㄌㄧㄤˇ','半':'ㄅㄢˋ','第':'ㄉㄧˋ','人':'ㄖㄣˊ','大':'ㄉㄚˋ','小':'ㄒㄧㄠˇ','中':'ㄓㄨㄥ','上':'ㄕㄤˋ','下':'ㄒㄧㄚˋ','左':'ㄗㄨㄛˇ','右':'ㄧㄡˋ','前':'ㄑㄧㄢˊ','後':'ㄏㄡˋ','內':'ㄋㄟˋ','外':'ㄨㄞˋ','東':'ㄉㄨㄥ','西':'ㄒㄧ','南':'ㄋㄢˊ','北':'ㄅㄟˇ','天':'ㄊㄧㄢ','地':'ㄉㄧˋ','水':'ㄕㄨㄟˇ','火':'ㄏㄨㄛˇ','木':'ㄇㄨˋ','金':'ㄐㄧㄣ','土':'ㄊㄨˇ','山':'ㄕㄢ','日':'ㄖˋ','月':'ㄩㄝˋ','年':'ㄋㄧㄢˊ','時':'ㄕˊ','分':'ㄈㄣ','秒':'ㄇㄧㄠˇ','期':'ㄑㄧ','今':'ㄐㄧㄣ','明':'ㄇㄧㄥˊ','昨':'ㄗㄨㄛˊ','早':'ㄗㄠˇ','午':'ㄨˇ','晚':'ㄨㄢˇ','夜':'ㄧㄝˋ','晨':'ㄔㄣˊ','春':'ㄔㄨㄣ','夏':'ㄒㄧㄚˋ','秋':'ㄑㄧㄡ','冬':'ㄉㄨㄥ','家':'ㄐㄧㄚ','室':'ㄕˋ','門':'ㄇㄣˊ','窗':'ㄔㄨㄤ','桌':'ㄓㄨㄛ','椅':'ㄧˇ','床':'ㄔㄨㄤˊ','房':'ㄈㄤˊ','廚':'ㄔㄨˊ','廁':'ㄘˋ','廳':'ㄊㄧㄥ','臥':'ㄨㄛˋ','客':'ㄎㄜˋ','浴':'ㄩˋ','父':'ㄈㄨˋ','母':'ㄇㄨˇ','爸':'ㄅㄚˋ','媽':'ㄇㄚ','哥':'ㄍㄜ','姐':'ㄐㄧㄝˇ','弟':'ㄉㄧˋ','妹':'ㄇㄟˋ','兄':'ㄒㄩㄥ','姊':'ㄐㄧˇ','祖':'ㄗㄨˇ','孫':'ㄙㄨㄣ','子':'ㄗˇ','女':'ㄋㄩˇ','兒':'ㄦˊ','孩':'ㄏㄞˊ','男':'ㄋㄢˊ','友':'ㄧㄡˇ','老':'ㄌㄠˇ','師':'ㄕ','同':'ㄊㄨㄥˊ','學':'ㄒㄩㄝˊ','校':'ㄒㄧㄠˋ','飯':'ㄈㄢˋ','菜':'ㄘㄞˋ','肉':'ㄖㄡˋ','魚':'ㄩˊ','雞':'ㄐㄧ','牛':'ㄋㄧㄡˊ','豬':'ㄓㄨ','羊':'ㄧㄤˊ','蛋':'ㄉㄢˋ','奶':'ㄋㄞˇ','油':'ㄧㄡˊ','鹽':'ㄧㄢˊ','糖':'ㄊㄤˊ','醬':'ㄐㄧㄤˋ','醋':'ㄘㄨˋ','麵':'ㄇㄧㄢˋ','包':'ㄅㄠ','餅':'ㄅㄧㄥˇ','糕':'ㄍㄠ','餃':'ㄐㄧㄠˇ','湯':'ㄊㄤ','粥':'ㄓㄡ','茶':'ㄔㄚˊ','咖':'ㄎㄚ','啡':'ㄈㄟ','汁':'ㄓ','酒':'ㄐㄧㄡˇ','果':'ㄍㄨㄛˇ','蘋':'ㄆㄧㄥˊ','香':'ㄒㄧㄤ','蕉':'ㄐㄧㄠ','橘':'ㄐㄩˊ','檸':'ㄋㄧㄥˊ','檬':'ㄇㄥˊ','草':'ㄘㄠˇ','莓':'ㄇㄟˊ','葡':'ㄆㄨˊ','萄':'ㄊㄠˊ','桃':'ㄊㄠˊ','李':'ㄌㄧˇ','梅':'ㄇㄟˊ','芒':'ㄇㄤˊ','瓜':'ㄍㄨㄚ','番':'ㄈㄢ','茄':'ㄑㄧㄝˊ','蔥':'ㄘㄨㄥ','薑':'ㄐㄧㄤ','蒜':'ㄙㄨㄢˋ','辣':'ㄌㄚˋ','椒':'ㄐㄧㄠ','蘿':'ㄌㄨㄛˊ','蔔':'ㄅㄛ','芹':'ㄑㄧㄣˊ','豆':'ㄉㄡˋ','腐':'ㄈㄨˇ','玉':'ㄩˋ','米':'ㄇㄧˇ','馬':'ㄇㄚˇ','鈴':'ㄌㄧㄥˊ','薯':'ㄕㄨˇ','花':'ㄏㄨㄚ','生':'ㄕㄥ','枝':'ㄓ','冰':'ㄅㄧㄥ','淇':'ㄑㄧˊ','淋':'ㄌㄧㄣˊ','巧':'ㄑㄧㄠˇ','克':'ㄎㄜˋ','力':'ㄌㄧˋ','棒':'ㄅㄤˋ','布':'ㄅㄨˋ','丁':'ㄉㄧㄥ','凍':'ㄉㄨㄥˋ','仙':'ㄒㄧㄢ','泡':'ㄆㄠˋ','軟':'ㄖㄨㄢˇ','做':'ㄗㄨㄛˋ','吃':'ㄔ','喝':'ㄏㄜ','買':'ㄇㄞˇ','賣':'ㄇㄞˋ','走':'ㄗㄡˇ','跑':'ㄆㄠˇ','跳':'ㄊㄧㄠˋ','站':'ㄓㄢˋ','坐':'ㄗㄨㄛˋ','睡':'ㄕㄨㄟˋ','起':'ㄑㄧˇ','來':'ㄌㄞˊ','去':'ㄑㄩˋ','看':'ㄎㄢˋ','聽':'ㄊㄧㄥ','說':'ㄕㄨㄛ','讀':'ㄉㄨˊ','寫':'ㄒㄧㄝˇ','畫':'ㄏㄨㄚˋ','唱':'ㄔㄤˋ','玩':'ㄨㄢˊ','笑':'ㄒㄧㄠˋ','哭':'ㄎㄨ','愛':'ㄞˋ','恨':'ㄏㄣˋ','想':'ㄒㄧㄤˇ','知':'ㄓ','懂':'ㄉㄨㄥˇ','教':'ㄐㄧㄠˋ','幫':'ㄅㄤ','忙':'ㄇㄤˊ','洗':'ㄒㄧˇ','掃':'ㄙㄠˇ','拖':'ㄊㄨㄛ','擦':'ㄘㄚ','整':'ㄓㄥˇ','理':'ㄌㄧˇ','收':'ㄕㄡ','拾':'ㄕˊ','折':'ㄓㄜˊ','疊':'ㄉㄧㄝˊ','倒':'ㄉㄠˋ','澆':'ㄐㄧㄠ','擺':'ㄅㄞˇ','放':'ㄈㄤˋ','拿':'ㄋㄚˊ','取':'ㄑㄩˇ','換':'ㄏㄨㄢˋ','穿':'ㄔㄨㄢ','脫':'ㄊㄨㄛ','刷':'ㄕㄨㄚ','剪':'ㄐㄧㄢˇ','切':'ㄑㄧㄝ','煮':'ㄓㄨˇ','炒':'ㄔㄠˇ','蒸':'ㄓㄥ','烤':'ㄎㄠˋ','炸':'ㄓㄚˋ','燉':'ㄉㄨㄣˋ','煎':'ㄐㄧㄢ','燒':'ㄕㄠ','好':'ㄏㄠˇ','壞':'ㄏㄨㄞˋ','多':'ㄉㄨㄛ','少':'ㄕㄠˇ','長':'ㄔㄤˊ','短':'ㄉㄨㄢˇ','高':'ㄍㄠ','低':'ㄉㄧ','快':'ㄎㄨㄞˋ','慢':'ㄇㄢˋ','新':'ㄒㄧㄣ','舊':'ㄐㄧㄡˋ','輕':'ㄑㄧㄥ','重':'ㄔㄨㄥˊ','熱':'ㄖㄜˋ','冷':'ㄌㄥˇ','乾':'ㄍㄢ','濕':'ㄕ','甜':'ㄊㄧㄢˊ','苦':'ㄎㄨˇ','酸':'ㄙㄨㄢ','鹹':'ㄒㄧㄢˊ','臭':'ㄔㄡˋ','硬':'ㄧㄥˋ','脆':'ㄘㄨㄟˋ','嫩':'ㄋㄣˋ','滑':'ㄏㄨㄚˊ','濃':'ㄋㄨㄥˊ','漂':'ㄆㄧㄠˋ','亮':'ㄌㄧㄤˋ','美':'ㄇㄟˇ','醜':'ㄔㄡˇ','乖':'ㄍㄨㄞ','話':'ㄏㄨㄚˋ','厲':'ㄌㄧˋ','害':'ㄏㄞˋ','聰':'ㄘㄨㄥ','勇':'ㄩㄥˇ','敢':'ㄍㄢˇ','貼':'ㄊㄧㄝ','心':'ㄒㄧㄣ','努':'ㄋㄨˇ','認':'ㄖㄣˋ','真':'ㄓㄣ','負':'ㄈㄨˋ','責':'ㄗㄜˊ','我':'ㄨㄛˇ','你':'ㄋㄧˇ','他':'ㄊㄚ','她':'ㄊㄚ','它':'ㄊㄚ','們':'ㄇㄣ˙','這':'ㄓㄜˋ','那':'ㄋㄚˋ','哪':'ㄋㄚˇ','什':'ㄕˊ','麼':'ㄇㄜ˙','怎':'ㄗㄣˇ','為':'ㄨㄟˋ','因':'ㄧㄣ','是':'ㄕˋ','不':'ㄅㄨˋ','有':'ㄧㄡˇ','沒':'ㄇㄟˊ','會':'ㄏㄨㄟˋ','能':'ㄋㄥˊ','可':'ㄎㄜˇ','要':'ㄧㄠˋ','讓':'ㄖㄤˋ','給':'ㄍㄟˇ','把':'ㄅㄚˇ','被':'ㄅㄟˋ','對':'ㄉㄨㄟˋ','和':'ㄏㄜˊ','或':'ㄏㄨㄛˋ','的':'ㄉㄜ˙','得':'ㄉㄜ˙','了':'ㄌㄜ˙','著':'ㄓㄜ','過':'ㄍㄨㄛˋ','在':'ㄗㄞˋ','從':'ㄘㄨㄥˊ','到':'ㄉㄠˋ','往':'ㄨㄤˇ','向':'ㄒㄧㄤˋ','以':'ㄧˇ','用':'ㄩㄥˋ','按':'ㄢˋ','很':'ㄏㄣˇ','非':'ㄈㄟ','常':'ㄔㄤˊ','最':'ㄗㄨㄟˋ','更':'ㄍㄥˋ','還':'ㄏㄞˊ','也':'ㄧㄝˇ','都':'ㄉㄡ','就':'ㄐㄧㄡˋ','才':'ㄘㄞˊ','只':'ㄓˇ','又':'ㄧㄡˋ','再':'ㄗㄞˋ','已':'ㄧˇ','經':'ㄐㄧㄥ','先':'ㄒㄧㄢ','然':'ㄖㄢˊ','雖':'ㄙㄨㄟ','但':'ㄉㄢˋ','如':'ㄖㄨˊ','所':'ㄙㄨㄛˇ','此':'ㄘˇ','而':'ㄦˊ','且':'ㄑㄧㄝˇ','者':'ㄓㄜˇ','請':'ㄑㄧㄥˇ','謝':'ㄒㄧㄝˋ','關':'ㄍㄨㄢ','係':'ㄒㄧˋ','見':'ㄐㄧㄢˋ','安':'ㄢ','任':'ㄖㄣˋ','務':'ㄨˋ','獎':'ㄐㄧㄤˇ','勵':'ㄌㄧˋ','代':'ㄉㄞˋ','幣':'ㄅㄧˋ','存':'ㄘㄨㄣˊ','錢':'ㄑㄧㄢˊ','筒':'ㄊㄨㄥˇ','餘':'ㄩˊ','額':'ㄜˊ','申':'ㄕㄣ','報':'ㄅㄠˋ','審':'ㄕㄣˇ','核':'ㄏㄜˊ','通':'ㄊㄨㄥ','退':'ㄊㄨㄟˋ','回':'ㄏㄨㄟˊ','領':'ㄌㄧㄥˇ','賞':'ㄕㄤˇ','點':'ㄉㄧㄢˇ','餐':'ㄘㄢ','訂':'ㄉㄧㄥˋ','單':'ㄉㄢ','色':'ㄙㄜˋ','品':'ㄆㄧㄣˇ','項':'ㄒㄧㄤˋ','庫':'ㄎㄨˋ','剩':'ㄕㄥˋ','售':'ㄕㄡˋ','完':'ㄨㄢˊ','加':'ㄐㄧㄚ','購':'ㄍㄡˋ','物':'ㄨˋ','車':'ㄔㄜ','結':'ㄐㄧㄝˊ','帳':'ㄓㄤˋ','兌':'ㄉㄨㄟˋ','享':'ㄒㄧㄤˇ','森':'ㄙㄣ','林':'ㄌㄧㄣˊ','館':'ㄍㄨㄢˇ','熊':'ㄒㄩㄥˊ','狐':'ㄏㄨˊ','狸':'ㄌㄧˊ','蔓':'ㄇㄢˋ','昊':'ㄏㄠˋ','兔':'ㄊㄨˋ','鼠':'ㄕㄨˇ','貓':'ㄇㄠ','狗':'ㄍㄡˇ','歡':'ㄏㄨㄢ','迎':'ㄧㄥˊ','光':'ㄍㄨㄤ','臨':'ㄌㄧㄣˊ','特':'ㄊㄜˋ','權':'ㄑㄩㄢˊ','現':'ㄒㄧㄢˋ','騰':'ㄊㄥˊ','架':'ㄐㄧㄚˋ','囉':'ㄌㄨㄛ˙','挑':'ㄊㄧㄠ','選':'ㄒㄩㄢˇ','喜':'ㄒㄧˇ','夠':'ㄍㄡˋ','直':'ㄓˊ','接':'ㄐㄧㄝ','喔':'ㄛ˙','擔':'ㄉㄢ','叮':'ㄉㄧㄥ','咚':'ㄉㄨㄥ','飛':'ㄈㄟ','進':'ㄐㄧㄣˋ','勾':'ㄍㄡ','准':'ㄓㄨㄣˇ','考':'ㄎㄠˇ','試':'ㄕˋ','榮':'ㄖㄨㄥˊ','譽':'ㄩˋ','摩':'ㄇㄛˊ','鐘':'ㄓㄨㄥ','具':'ㄐㄩˋ','自':'ㄗˋ','己':'ㄐㄧˇ','壺':'ㄏㄨˊ','衣':'ㄧ','服':'ㄈㄨˊ','牙':'ㄧㄚˊ','臉':'ㄌㄧㄢˇ','鞋':'ㄒㄧㄝˊ','墊':'ㄉㄧㄢˋ','枕':'ㄓㄣˇ','頭':'ㄊㄡˊ','抱':'ㄅㄠˋ','娃':'ㄨㄚ','垃':'ㄌㄜˋ','圾':'ㄙㄜˋ','袋':'ㄉㄞˋ','桶':'ㄊㄨㄥˇ','碗':'ㄨㄢˇ','盤':'ㄆㄢˊ','筷':'ㄎㄨㄞˋ','叉':'ㄔㄚ','匙':'ㄔˊ','盆':'ㄆㄣˊ','栽':'ㄗㄞ','種':'ㄓㄨㄥˇ','植':'ㄓˊ','超':'ㄔㄠ','級':'ㄐㄧˊ','戰':'ㄓㄢˋ','限':'ㄒㄧㄢˋ','視':'ㄕˋ','影':'ㄧㄥˇ','遊':'ㄧㄡˊ','戲':'ㄒㄧˋ','本':'ㄅㄣˇ','音':'ㄧㄣ','樂':'ㄩㄝˋ','鋼':'ㄍㄤ','琴':'ㄑㄧㄣˊ','吉':'ㄐㄧˊ','提':'ㄊㄧˊ','園':'ㄩㄢˊ','游':'ㄧㄡˊ','泳':'ㄩㄥˇ','池':'ㄔˊ','球':'ㄑㄧㄡˊ','場':'ㄔㄤˊ','店':'ㄉㄧㄢˋ','市':'ㄕˋ','便':'ㄅㄧㄢˋ','商':'ㄕㄤ','密':'ㄇㄧˋ','碼':'ㄇㄚˇ','輸':'ㄕㄨ','登':'ㄉㄥ','出':'ㄔㄨ','成':'ㄔㄥˊ','功':'ㄍㄨㄥ','失':'ㄕ','敗':'ㄅㄞˋ','錯':'ㄘㄨㄛˋ','誤':'ㄨˋ','正':'ㄓㄥˋ','確':'ㄑㄩㄝˋ','載':'ㄓㄞˋ','網':'ㄨㄤˇ','路':'ㄌㄨˋ','增':'ㄗㄥ','刪':'ㄕㄢ','除':'ㄔㄨˊ','編':'ㄅㄧㄢ','輯':'ㄐㄧˊ','保':'ㄅㄠˇ','名':'ㄇㄧㄥˊ','稱':'ㄔㄥ','價':'ㄐㄧㄚˋ','格':'ㄍㄜˊ','照':'ㄓㄠˋ','片':'ㄆㄧㄢˋ','連':'ㄌㄧㄢˊ','址':'ㄓˇ','送':'ㄙㄨㄥˋ','待':'ㄉㄞˋ','等':'ㄉㄥˇ','歷':'ㄌㄧˋ','史':'ㄕˇ','紀':'ㄐㄧˋ','錄':'ㄌㄨˋ','消':'ㄒㄧㄠ','總':'ㄗㄨㄥˇ','計':'ㄐㄧˋ','足':'ㄗㄨˊ','賺':'ㄓㄨㄢˋ','調':'ㄉㄧㄠˋ','贈':'ㄗㄥˋ','扣':'ㄎㄡˋ','目':'ㄇㄨˋ','壽':'ㄕㄡˋ','治':'ㄓˋ','吐':'ㄊㄨˇ','司':'ㄙ','捲':'ㄐㄩㄢˇ','握':'ㄨㄛˋ','滷':'ㄌㄨˇ','排':'ㄆㄞˊ','骨':'ㄍㄨˇ','腿':'ㄊㄨㄟˇ','鰻':'ㄇㄢˊ','鮭':'ㄍㄨㄟ','鮪':'ㄨㄟˇ','蝦':'ㄒㄧㄚ','仁':'ㄖㄣˊ','蟹':'ㄒㄧㄝˋ','貝':'ㄅㄟˋ','類':'ㄌㄟˋ','溜':'ㄌㄧㄡ','糰':'ㄊㄨㄢˊ','優':'ㄧㄡ','醇':'ㄔㄨㄣˊ','烏':'ㄨ','龍':'ㄌㄨㄥˊ','珍':'ㄓㄣ','珠':'ㄓㄨ','絲':'ㄙ','粉':'ㄈㄣˇ','漢':'ㄏㄢˋ','堡':'ㄅㄠˇ','條':'ㄊㄧㄠˊ','披':'ㄆㄧ','薩':'ㄙㄚˋ','義':'ㄧˋ','健':'ㄐㄧㄢˋ','康':'ㄎㄤ','蔬':'ㄕㄨ','機':'ㄐㄧ','味':'ㄨㄟˋ','口':'ㄎㄡˇ','壯':'ㄓㄨㄤˋ','速':'ㄙㄨˋ','迷':'ㄇㄧˊ','紅':'ㄏㄨㄥˊ','綠':'ㄌㄩˋ','藍':'ㄌㄢˊ','黃':'ㄏㄨㄤˊ','黑':'ㄏㄟ','白':'ㄅㄞˊ','芋':'ㄩˋ','雙':'ㄕㄨㄤ','層':'ㄘㄥˊ','份':'ㄈㄣˋ','鈕':'ㄋㄧㄡˇ','繼':'ㄐㄧˋ','續':'ㄒㄩˋ','動':'ㄉㄨㄥˋ','管':'ㄍㄨㄢˇ','資':'ㄗ','料':'ㄌㄧㄠˋ','號':'ㄏㄠˋ','描':'ㄇㄧㄠˊ','立':'ㄌㄧˋ','即':'ㄐㄧˊ','缺':'ㄑㄩㄝ','貨':'ㄏㄨㄛˋ','數':'ㄕㄨˋ','量':'ㄌㄧㄤˋ','張':'ㄓㄤ','間':'ㄐㄧㄢ','每':'ㄇㄟˇ','次':'ㄘˋ','台':'ㄊㄞˊ','側':'ㄘㄜˋ'};
 
 function rb(text) {
-  if (!text) return text;
+  if (!text) return String(text ?? '');
+  // CJK chars → wrapped in .rb-char span with ruby annotation for uniform spacing
+  // Non-CJK (letters, numbers, punctuation, spaces) → plain, stays inline naturally
   return String(text).split('').map(ch => {
-    if (ch >= '\u4e00' && ch <= '\u9fff' && BOPO[ch])
-      return `<ruby>${ch}<rt>${BOPO[ch]}</rt></ruby>`;
+    const isCJK = ch >= '\u4e00' && ch <= '\u9fff';
+    if (isCJK) {
+      const rt = BOPO[ch] || '';
+      if (rt) {
+        return `<span class="rb-char"><ruby>${ch}<rt>${rt}</rt></ruby></span>`;
+      } else {
+        // No bopomofo known: still use rb-char for uniform width
+        return `<span class="rb-char"><ruby>${ch}<rt>\u3000</rt></ruby></span>`;
+      }
+    }
+    // Non-CJK: render as-is, no wrapper
     return ch;
   }).join('');
 }
@@ -894,13 +947,13 @@ function C(size=16) {
 // ── STATE ──
 let currentChild = "candice";
 let allData = {}; // { candice:{balance,chores,menu,orders}, harris:{...} }
-let carts = { candice: [], harris: [] }; // 每個孩子各自<ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby>
+let carts = { candice: [], harris: [] }; // 每個孩子各自的購物車
 let currentSubTab = "menu";
 let currentMamaTab = "approve";
 let mamaUnlocked = false;
 let localChoreStatus = {}; // choreId_childId → status (local until API confirms)
 
-// 目前孩子<ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby>（shorthand）
+// 目前孩子的購物車（shorthand）
 function getCart() { return carts[currentChild]; }
 function setCart(val) { carts[currentChild] = val; }
 
@@ -992,7 +1045,9 @@ function memberAvatar(id, size=36) {
 
 // ── PAGE ROUTING ──
 function showPage(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => {
+    if (p.id !== 'welcome-page') p.classList.remove('active');
+  });
   document.getElementById(page + '-page').classList.add('active');
   document.getElementById('nav-child').classList.toggle('active', page === 'child');
   document.getElementById('nav-mama').classList.toggle('active',  page === 'mama');
@@ -1005,7 +1060,7 @@ function switchChild(id) {
   currentChild = id;
   document.getElementById('tab-candice').className = 'child-tab' + (id==='candice'?' active-candice':'');
   document.getElementById('tab-harris').className  = 'child-tab' + (id==='harris' ?' active-harris':'');
-  updateCartFab(); // 切換後顯示該孩子自己<ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby>數量
+  updateCartFab(); // 切換後顯示該孩子自己的購物車數量
   renderSubTab(currentSubTab);
 }
 
@@ -1042,14 +1097,14 @@ async function loadAll() {
     updateBalanceDisplay();
     renderSubTab(currentSubTab);
   } catch(e) {
-    showToast('⚠️ <ruby>載<rt>ㄓㄞˋ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby><ruby>失<rt>ㄕ</rt></ruby><ruby>敗<rt>ㄅㄞˋ</rt></ruby>，<ruby>請<rt>ㄑㄧㄥˇ</rt></ruby><ruby>檢<rt>ㄐㄧㄢˇ</rt></ruby><ruby>查<rt>ㄔㄚˊ</rt></ruby><ruby>網<rt>ㄨㄤˇ</rt></ruby><ruby>路<rt>ㄌㄨˋ</rt></ruby>', 'error');
+    showToast('⚠️ 載入失敗，請檢查網路', 'error');
   }
 }
 
 function updateBalanceDisplay() {
   ['candice','harris'].forEach(id => {
     const bal = allData[id]?.balance ?? '—';
-    document.getElementById('balance-'+id).innerHTML = C(14) + ' ' + bal + ' <ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>';
+    document.getElementById('balance-'+id).innerHTML = C(14) + ' ' + bal + ' 代幣';
   });
 }
 
@@ -1077,7 +1132,7 @@ function renderMenu(data) {
           <div class="menu-name">${rb(m.item_name)}</div>
           <div class="menu-foot">
             <div class="price-tag" style="display:flex;align-items:center;gap:4px;">${C(15)} ${m.price_coins}</div>
-            <button class="order-btn" onclick="addToCart('${m.food_id}')"><ruby>加<rt>ㄐㄧㄚ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby> 🛒</button>
+            <button class="order-btn" onclick="addToCart('${m.food_id}')">加入 🛒</button>
           </div>
         </div>
       </div>`;
@@ -1106,7 +1161,7 @@ function renderChores(data) {
     } else if (status === 'review') {
       rightHtml = `<div class="status-badge review">⏳ 等審核</div>`;
     } else if (status === 'claimed') {
-      rightHtml = `<div class="status-badge claimed">✅ <ruby>已<rt>ㄧˇ</rt></ruby><ruby>領<rt>ㄌㄧㄥˇ</rt></ruby><ruby>賞<rt>ㄕㄤˇ</rt></ruby></div>`;
+      rightHtml = `<div class="status-badge claimed">✅ 已領賞</div>`;
     }
 
     // 限時挑戰：倒數計時
@@ -1191,10 +1246,10 @@ function renderMyOrders(data) {
   }
 
   if (done.length) {
-    html += `<div class="section-title" style="padding-top:8px;">📋 <ruby>歷<rt>ㄌㄧˋ</rt></ruby><ruby>史<rt>ㄕˇ</rt></ruby><ruby>紀<rt>ㄐㄧˋ</rt></ruby><ruby>錄<rt>ㄌㄨˋ</rt></ruby></div>`;
+    html += `<div class="section-title" style="padding-top:8px;">📋 歷史紀錄</div>`;
     html += done.slice().reverse().map(o => {
       const dotClass  = o.status === 'approved' ? 'approved' : 'rejected';
-      const statusTxt = o.status === 'approved' ? '✅ <ruby>已<rt>ㄧˇ</rt></ruby><ruby>出<rt>ㄔㄨ</rt></ruby><ruby>餐<rt>ㄘㄢ</rt></ruby>' : '❌ <ruby>取<rt>ㄑㄩˇ</rt></ruby><ruby>消<rt>ㄒㄧㄠ</rt></ruby><ruby>退<rt>ㄊㄨㄟˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>';
+      const statusTxt = o.status === 'approved' ? '✅ 已出餐' : '❌ 取消退幣';
       return `
         <div class="order-history-item">
           <div class="order-dot ${dotClass}"></div>
@@ -1220,7 +1275,7 @@ function addToCart(foodId) {
   if (existing) { existing.qty++; }
   else { cart.push({...item, qty: 1}); }
   updateCartFab();
-  showToast(`🛒 <ruby>加<rt>ㄐㄧㄚ</rt></ruby><ruby>入<rt>ㄖㄨˋ</rt></ruby> ${MEMBERS[currentChild].name} <ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby>！`, 'success');
+  showToast(`🛒 加入 ${MEMBERS[currentChild].name} 的購物車！`, 'success');
   playCoin();
 }
 
@@ -1230,7 +1285,7 @@ function updateCartFab() {
   document.getElementById('cart-count').textContent = count;
   const m = MEMBERS[currentChild];
   document.getElementById('cart-fab').innerHTML =
-    `${m.avatar} ${rb(m.name)} <ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby> <span class="cart-count">${count}</span>`;
+    `${m.avatar} ${rb(m.name)} 的購物車 <span class="cart-count">${count}</span>`;
   document.getElementById('cart-fab').style.display = count > 0 ? 'flex' : 'none';
   if (count > 0) setTimeout(syncOverlayPositions, 0);
 }
@@ -1243,9 +1298,9 @@ function openCart() {
   const total = cart.reduce((s,c) => s + c.price_coins * c.qty, 0);
   const m = MEMBERS[currentChild];
 
-  // 標題顯示是誰<ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby>
+  // 標題顯示是誰的購物車
   document.querySelector('#cart-modal .modal-title').innerHTML =
-    `${m.avatar} ${rb(m.name)} <ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>購<rt>ㄍㄡˋ</rt></ruby><ruby>物<rt>ㄨˋ</rt></ruby><ruby>車<rt>ㄔㄜ</rt></ruby> <button class="modal-close" onclick="closeCart()">✕</button>`;
+    `${m.avatar} ${rb(m.name)} 的購物車 <button class="modal-close" onclick="closeCart()">✕</button>`;
 
   document.getElementById('cart-items').innerHTML = cart.map(c => `
     <div class="order-item">
@@ -1256,11 +1311,11 @@ function openCart() {
     </div>`).join('');
 
   document.getElementById('cart-total').innerHTML =
-    `<span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">總計：<strong style="display:inline-flex;align-items:center;gap:3px;">${C(16)} ${total}</strong>&nbsp;&nbsp;|&nbsp;&nbsp;${m.name}<ruby>餘<rt>ㄩˊ</rt></ruby><ruby>額<rt>ㄜˊ</rt></ruby>：<span style="display:inline-flex;align-items:center;gap:3px;">${C(14)} ${balance}</span></span>`;
+    `<span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">總計：<strong style="display:inline-flex;align-items:center;gap:3px;">${C(16)} ${total}</strong>&nbsp;&nbsp;|&nbsp;&nbsp;${m.name}餘額：<span style="display:inline-flex;align-items:center;gap:3px;">${C(14)} ${balance}</span></span>`;
 
   const btn = document.getElementById('submit-order-btn');
   btn.disabled = total > balance;
-  btn.textContent = total > balance ? '❌ <ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>不足，先去賺幣！' : `🍽️ ${m.name} 送出訂單！`;
+  btn.textContent = total > balance ? '❌ 代幣不足，先去賺幣！' : `🍽️ ${m.name} 送出訂單！`;
 
   modal.classList.add('open');
 }
@@ -1286,14 +1341,14 @@ async function submitOrder() {
   }
   const m = MEMBERS[currentChild];
   closeCart();
-  showToast(`📨 ${m.name} 的<ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby><ruby>送<rt>ㄙㄨㄥˋ</rt></ruby><ruby>出<rt>ㄔㄨ</rt></ruby><ruby>中<rt>ㄓㄨㄥ</rt></ruby>...`, '');
+  showToast(`📨 ${m.name} 的訂單送出中...`, '');
   for (const item of cart) {
     const url = `${API}?action=purchaseItem&childId=${currentChild}&itemId=${encodeURIComponent(item.food_id)}`;
     try { await fetch(url); } catch(e) {}
   }
   setCart([]);
   updateCartFab();
-  showToast(`🎉 ${m.name} <ruby>的<rt>ㄉㄜ˙</rt></ruby><ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby><ruby>送<rt>ㄙㄨㄥˋ</rt></ruby><ruby>出<rt>ㄔㄨ</rt></ruby>！<ruby>等<rt>ㄉㄥˇ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>確<rt>ㄑㄩㄝˋ</rt></ruby><ruby>認<rt>ㄖㄣˋ</rt></ruby>喔～`, 'success');
+  showToast(`🎉 ${m.name} 的訂單送出！等媽媽確認喔～`, 'success');
   playBuy();
   setTimeout(() => loadAll(), 2000);
 }
@@ -1302,7 +1357,7 @@ async function submitOrder() {
 async function declareChore(choreId) {
   localChoreStatus[choreId] = 'review';
   renderChores(allData[currentChild]);
-  showToast('✋ <ruby>已<rt>ㄧˇ</rt></ruby><ruby>申<rt>ㄕㄣ</rt></ruby><ruby>報<rt>ㄅㄠˋ</rt></ruby>！<ruby>等<rt>ㄉㄥˇ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>媽<rt>ㄇㄚ</rt></ruby><ruby>審<rt>ㄕㄣˇ</rt></ruby><ruby>核<rt>ㄏㄜˊ</rt></ruby>～', 'warn');
+  showToast('✋ 已申報！等媽媽審核～', 'warn');
   playPluck('E5', '0.05');
   const url = `${API}?action=declareChore&choreId=${encodeURIComponent(choreId)}&childId=${currentChild}`;
   try { await fetch(url); } catch(e) {}
@@ -1313,7 +1368,7 @@ async function declareChore(choreId) {
 function showFundsModal(total, balance) {
   syncOverlayPositions();
   document.getElementById('funds-msg').innerHTML =
-    `需要 ${C(14)} ${total}，但只有 ${C(14)} ${balance}<br><ruby>快<rt>ㄎㄨㄞˋ</rt></ruby><ruby>去<rt>ㄑㄩˋ</rt></ruby><ruby>做<rt>ㄗㄨㄛˋ</rt></ruby><ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby><ruby>賺<rt>ㄓㄨㄢˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>吧！`;
+    `需要 ${C(14)} ${total}，但只有 ${C(14)} ${balance}<br>快去做家事賺幣吧！`;
   document.getElementById('funds-modal').classList.add('open');
   playFail();
 }
@@ -1492,7 +1547,7 @@ function renderMamaOrders() {
           </div>
           <div class="review-actions">
             <button class="rev-btn approve" onclick="approveOrder('${o.id||o.order_id}','${o.childId}','${o.item_name}',${o.price_coins})">✅ 確認出餐</button>
-            <button class="rev-btn reject"  onclick="rejectOrder('${o.id||o.order_id}','${o.childId}','${o.item_name}',${o.price_coins})">❌ <ruby>取<rt>ㄑㄩˇ</rt></ruby><ruby>消<rt>ㄒㄧㄠ</rt></ruby><ruby>退<rt>ㄊㄨㄟˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby></button>
+            <button class="rev-btn reject"  onclick="rejectOrder('${o.id||o.order_id}','${o.childId}','${o.item_name}',${o.price_coins})">❌ 取消退幣</button>
           </div>
         </div>`;
     }).join('');
@@ -1502,7 +1557,7 @@ function renderMamaOrders() {
     html += done.slice().reverse().slice(0,15).map(o => {
       const m = MEMBERS[o.childId];
       const dotClass = o.status === 'approved' ? 'approved' : 'rejected';
-      const statusTxt = o.status === 'approved' ? '✅ <ruby>已<rt>ㄧˇ</rt></ruby><ruby>出<rt>ㄔㄨ</rt></ruby><ruby>餐<rt>ㄘㄢ</rt></ruby>' : '❌ 已取消';
+      const statusTxt = o.status === 'approved' ? '✅ 已出餐' : '❌ 已取消';
       return `
         <div class="order-history-item">
           <div class="order-dot ${dotClass}"></div>
@@ -1514,7 +1569,7 @@ function renderMamaOrders() {
         </div>`;
     }).join('');
   }
-  if (!html) html = '<div class="empty">📭 目前<ruby>沒<rt>ㄇㄟˊ</rt></ruby><ruby>有<rt>ㄧㄡˇ</rt></ruby><ruby>訂<rt>ㄉㄧㄥˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby></div>';
+  if (!html) html = '<div class="empty">📭 目前沒有訂單</div>';
   list.innerHTML = html;
 }
 
@@ -1543,7 +1598,7 @@ function renderCoins() {
 function renderMenuEditor() {
   const items = allData.candice?.menu || [];
   const el = document.getElementById('menu-editor');
-  if (!items.length) { el.innerHTML = '<div class="empty">目前<ruby>沒<rt>ㄇㄟˊ</rt></ruby><ruby>有<rt>ㄧㄡˇ</rt></ruby><ruby>菜<rt>ㄘㄞˋ</rt></ruby><ruby>單<rt>ㄉㄢ</rt></ruby>品項</div>'; return; }
+  if (!items.length) { el.innerHTML = '<div class="empty">目前沒有菜單品項</div>'; return; }
   el.innerHTML = items.map(m => `
     <div class="sheet-row" id="mrow-${m.food_id}">
       <div class="sheet-row-emoji">🍱</div>
@@ -1561,7 +1616,7 @@ function renderMenuEditor() {
 function renderChoreEditor() {
   const chores = allData.candice?.chores || [];
   const el = document.getElementById('chore-editor');
-  if (!chores.length) { el.innerHTML = '<div class="empty">目前<ruby>沒<rt>ㄇㄟˊ</rt></ruby><ruby>有<rt>ㄧㄡˇ</rt></ruby><ruby>家<rt>ㄐㄧㄚ</rt></ruby><ruby>事<rt>ㄕˋ</rt></ruby><ruby>任<rt>ㄖㄣˋ</rt></ruby><ruby>務<rt>ㄨˋ</rt></ruby></div>'; return; }
+  if (!chores.length) { el.innerHTML = '<div class="empty">目前沒有家事任務</div>'; return; }
   el.innerHTML = chores.map(c => {
     const isActive    = c.is_active != 0 && c.is_active !== '0' && c.is_active !== false;
     const isChallenge = c.is_challenge == 1;
@@ -1627,7 +1682,7 @@ async function approveChore(choreId, childId, coins, taskName) {
     const res = await fetch(url);
     const data = await res.json();
     if (data.success) {
-      showToast(`🎉 ${MEMBERS[childId].name} 獲得 ${data.coinsAwarded || coins} 枚<ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>！`, 'success');
+      showToast(`🎉 ${MEMBERS[childId].name} 獲得 ${data.coinsAwarded || coins} 枚代幣！`, 'success');
       playCoin();
       burst(120, '#ffb830');
     } else {
@@ -1653,10 +1708,10 @@ async function approveOrder(orderId, childId, itemName, coins) {
 }
 
 async function rejectOrder(orderId, childId, itemName, coins) {
-  if (!confirm(`取消「${itemName}」訂單？\n將退還 ${coins} 枚<ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>給 ${MEMBERS[childId].name}`)) return;
+  if (!confirm(`取消「${itemName}」訂單？\n將退還 ${coins} 枚代幣給 ${MEMBERS[childId].name}`)) return;
   const url = `${API}?action=rejectPurchase&orderId=${encodeURIComponent(orderId)}&childId=${childId}`;
   try { await fetch(url); } catch(e) {}
-  showToast('訂單已取消，<ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>退還', 'warn');
+  showToast('訂單已取消，代幣退還', 'warn');
   setTimeout(() => { loadAll().then(() => loadMamaTab('orders')); }, 1000);
 }
 
@@ -1670,7 +1725,7 @@ async function adjustCoins(childId, sign) {
     const res = await fetch(url);
     const data = await res.json();
     if (data.success) {
-      const label = sign > 0 ? `給了 ${MEMBERS[childId].name} ${amt} 枚<ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>` : `扣了 ${MEMBERS[childId].name} ${amt} 枚<ruby>代<rt>ㄉㄞˋ</rt></ruby><ruby>幣<rt>ㄅㄧˋ</rt></ruby>`;
+      const label = sign > 0 ? `給了 ${MEMBERS[childId].name} ${amt} 枚代幣` : `扣了 ${MEMBERS[childId].name} ${amt} 枚代幣`;
       showToast('✏️ ' + label, sign>0?'success':'warn');
       if (sign>0) { playCoin(); burst(60,'#ffb830'); }
     } else {
@@ -1960,7 +2015,7 @@ document.getElementById('wc-bear').innerHTML    = bearChefSVG(72);
 document.getElementById('wc-fox').innerHTML     = foxMomSVG(72);
 loadAll();
 
-// 孩子頁面每 30 秒自動更新<ruby>餘<rt>ㄩˊ</rt></ruby><ruby>額<rt>ㄜˊ</rt></ruby>和資料
+// 孩子頁面每 30 秒自動更新餘額和資料
 setInterval(async () => {
   // 只在孩子頁面時更新，不打擾媽媽後台
   const childPageActive = document.getElementById('child-page').classList.contains('active');
