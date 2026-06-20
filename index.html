@@ -871,7 +871,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbw8BtXEpikq7Qssp33jQt7wQrvIrTA_wczrN6UxPczfUZC3zyVU4EE8ZqkOTYsP-_n4/exec";
+const API = "https://script.google.com/macros/s/AKfycbyjfW6kfL0n5KAvcFXHpw2EROq6W_w6dz4RJOECYpcFPT64iSVJBoMCD5Zhve64LIxp/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -1092,6 +1092,7 @@ function renderMenu(data) {
          </div>`
       : `<div class="price-tag" style="display:flex;align-items:center;gap:4px;">${C(15)} ${m.price_coins}</div>`;
     const saleBadge = onSale ? `<div class="stock-badge" style="left:6px;right:auto;top:6px;bottom:auto;background:#e6483c;">🔥 特價中</div>` : '';
+    const saleEndHint = onSale ? `<div style="font-size:10px;color:#e6483c;font-weight:600;">⏰ 至 ${m.sale_end_display} 截止</div>` : '';
     return `
       <div class="menu-card">
         <div class="menu-photo">
@@ -1101,6 +1102,7 @@ function renderMenu(data) {
         </div>
         <div class="menu-body">
           <div class="menu-name">${rb(m.item_name)}</div>
+          ${saleEndHint}
           <div class="menu-foot">
             ${priceHtml}
             <button class="order-btn" onclick="addToCart('${m.food_id}')">加入 🛒</button>
@@ -1135,14 +1137,10 @@ function renderChores(data) {
       rightHtml = `<div class="status-badge claimed">✅ 已領賞</div>`;
     }
 
-    // 限時挑戰：倒數計時
+    // 限時挑戰：顯示固定截止時間文字（後端統一算好，安全且不需要計時器）
     let countdownHtml = '';
-    if (isChallenge && c.challenge_end) {
-      const end = new Date(c.challenge_end);
-      const diff = end - new Date();
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      countdownHtml = `<div style="font-size:11px;color:#e05000;font-weight:700;margin-top:2px;">⏰ 還剩 ${h}時${m}分</div>`;
+    if (isChallenge && c.challenge_end_display) {
+      countdownHtml = `<div style="font-size:11px;color:#e05000;font-weight:700;margin-top:2px;">⏰ 至 ${c.challenge_end_display} 截止</div>`;
     }
 
     const cardStyle = isChallenge
@@ -1619,7 +1617,6 @@ function renderMenuEditor() {
   if (!items.length) { el.innerHTML = '<div class="empty">目前沒有菜單品項</div>'; return; }
   el.innerHTML = items.map(m => {
     const onSale = m.is_sale_active == 1;
-    const saleEndForInput = m.sale_end ? toDatetimeLocalValue(m.sale_end) : '';
     return `
     <div class="sheet-row" id="mrow-${m.food_id}">
       <div class="sheet-row-emoji">🍱</div>
@@ -1632,62 +1629,69 @@ function renderMenuEditor() {
       <button class="del-btn" onclick="deleteMenuItem('${m.food_id}')">🗑</button>
     </div>
     <div class="sheet-row sale-row" id="msale-${m.food_id}" style="padding:6px 10px 10px 44px;border-top:none;">
-      <div class="sheet-row-body" style="gap:6px;align-items:center;">
+      <div class="sheet-row-body" style="gap:6px;align-items:center;flex-wrap:wrap;">
         <span style="font-size:12px;color:var(--cocoa-soft);white-space:nowrap;">🔥特價</span>
-        <input class="sheet-field num" id="msp-${m.food_id}" type="number" placeholder="特價金額" value="${m.sale_price ?? ''}" style="max-width:90px;">
-        <input class="sheet-field" id="mse-${m.food_id}" type="datetime-local" value="${saleEndForInput}" style="max-width:170px;">
+        <input class="sheet-field num" id="msp-${m.food_id}" type="number" placeholder="金額" value="${m.sale_price ?? ''}" style="max-width:70px;">
+        <span style="font-size:12px;color:var(--cocoa-soft);white-space:nowrap;">維持</span>
+        <input class="sheet-field num" id="msd-${m.food_id}" type="number" placeholder="數字" min="1" style="max-width:60px;">
+        <select class="sheet-field" id="msu-${m.food_id}" style="max-width:80px;">
+          <option value="1">分鐘</option>
+          <option value="60">小時</option>
+        </select>
+        <button class="del-btn" onclick="clearMenuSaleInputs('${m.food_id}')" title="清空">✕</button>
         <button class="save-row-btn" onclick="saveMenuSale('${m.food_id}')">✅ 設定</button>
-        ${onSale ? `<button class="del-btn" onclick="cancelMenuSale('${m.food_id}')" title="取消特價">取消特價</button>` : ''}
-        ${onSale ? `<span style="font-size:11px;color:#e6483c;font-weight:700;">特價中</span>` : ''}
+        ${onSale ? `<span style="font-size:11px;color:#e6483c;font-weight:700;">🔥特價中・至 ${m.sale_end_display} 截止</span>` : ''}
       </div>
     </div>`;
   }).join('');
 }
 
-// 把後端的時間字串轉成 <input type="datetime-local"> 需要的格式 (yyyy-MM-ddTHH:mm)
-// 注意：不能用 new Date() 解析再用 getHours() 取值，那樣會被瀏覽器當地時區影響、
-// 跟原始存的數字不一致；改用正則直接拆解字串，顯示出來的數字保證跟存進去的一模一樣
-function toDatetimeLocalValue(dateStr) {
-  const m = String(dateStr).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})/);
-  if (!m) return '';
-  const pad = n => String(n).padStart(2, '0');
-  return `${m[1]}-${pad(m[2])}-${pad(m[3])}T${pad(m[4])}:${pad(m[5])}`;
+// 清空畫面上特價金額/持續時間輸入框（純前端，不會動到 Sheet；
+// 若要真正取消已生效的特價，清空後直接按「設定」即可，saveMenuSale 會視為取消）
+function clearMenuSaleInputs(foodId) {
+  document.getElementById(`msp-${foodId}`).value = '';
+  document.getElementById(`msd-${foodId}`).value = '';
 }
 
-// 媽媽設定限時特價
+// 媽媽設定／取消限時特價
+// 規則：金額和持續時間都有填 → 設定特價；兩者都空白 → 視為取消特價；只填一邊 → 提示錯誤
 async function saveMenuSale(foodId) {
   const salePrice = document.getElementById(`msp-${foodId}`).value;
-  const saleEndRaw = document.getElementById(`mse-${foodId}`).value; // yyyy-MM-ddTHH:mm
-  if (!salePrice || Number(salePrice) <= 0) {
-    showToast('請輸入大於 0 的特價金額', 'error');
-    return;
+  const durationVal = document.getElementById(`msd-${foodId}`).value;
+  const unit = document.getElementById(`msu-${foodId}`).value; // 1=分鐘, 60=小時(以分鐘為底)
+  const durationMinutes = durationVal ? Number(durationVal) * Number(unit) : '';
+
+  const bothEmpty = (!salePrice || Number(salePrice) <= 0) && !durationVal;
+  const url = bothEmpty
+    ? `${API}?action=setMenuSale&foodId=${encodeURIComponent(foodId)}&salePrice=0`
+    : null;
+
+  if (!bothEmpty) {
+    if (!salePrice || Number(salePrice) <= 0) {
+      showToast('請輸入大於 0 的特價金額', 'error');
+      return;
+    }
+    if (!durationVal || Number(durationVal) <= 0) {
+      showToast('請輸入要維持多久', 'error');
+      return;
+    }
   }
-  if (!saleEndRaw) {
-    showToast('請設定特價到期時間', 'error');
-    return;
-  }
-  const saleEnd = saleEndRaw.replace('T', ' '); // 轉成後端可解析的字串
-  const url = `${API}?action=setMenuSale&foodId=${encodeURIComponent(foodId)}&salePrice=${encodeURIComponent(salePrice)}&saleEnd=${encodeURIComponent(saleEnd)}`;
+
+  const finalUrl = url || `${API}?action=setMenuSale&foodId=${encodeURIComponent(foodId)}&salePrice=${encodeURIComponent(salePrice)}&durationMinutes=${encodeURIComponent(durationMinutes)}`;
+
   try {
-    await fetch(url);
-    showToast('🔥 特價已設定！', 'success');
+    const res = await fetch(finalUrl);
+    const result = await res.json();
+    if (result.error) {
+      showToast('❌ ' + result.error, 'error');
+      return;
+    }
+    showToast(bothEmpty ? '已取消特價，恢復原價' : '🔥 特價已設定！', bothEmpty ? 'warn' : 'success');
+    clearMenuSaleInputs(foodId);
     await loadAll();
     loadMamaTab('menu');
   } catch(e) {
     showToast('❌ 設定失敗，請重試', 'error');
-  }
-}
-
-// 媽媽取消限時特價
-async function cancelMenuSale(foodId) {
-  const url = `${API}?action=setMenuSale&foodId=${encodeURIComponent(foodId)}&salePrice=0`;
-  try {
-    await fetch(url);
-    showToast('已取消特價，恢復原價', 'warn');
-    await loadAll();
-    loadMamaTab('menu');
-  } catch(e) {
-    showToast('❌ 取消失敗，請重試', 'error');
   }
 }
 
@@ -1699,7 +1703,7 @@ function renderChoreEditor() {
   el.innerHTML = chores.map(c => {
     const isActive    = c.is_active != 0 && c.is_active !== '0' && c.is_active !== false;
     const isChallenge = c.is_challenge == 1;
-    const endVal      = c.challenge_end || '';
+    const isChallengeActive = c.challenge_active == 1;
     return `
       <div class="sheet-row" id="crow-${c.task_id}">
         <div class="sheet-row-emoji">${isChallenge ? '🔥' : '📋'}</div>
@@ -1715,41 +1719,56 @@ function renderChoreEditor() {
           <button class="toggle-btn ${isActive?'on':'off'}" id="ca-${c.task_id}" onclick="toggleChoreActive('${c.task_id}')">
             ${isActive?'✅ 上架':'⬜ 下架'}
           </button>
-          <!-- 限時挑戰開關 -->
-          <button class="toggle-btn ${isChallenge?'on':'off'}" id="cc-${c.task_id}"
-            onclick="toggleChallengeUI('${c.task_id}')"
-            style="${isChallenge?'background:#fff3cd;color:#c05000;border-color:#ff7f00;':''}">
-            ${isChallenge?'🔥 挑戰中':'🔥 設挑戰'}
-          </button>
-          <!-- 截止時間（挑戰時顯示）-->
-          <input type="datetime-local" class="sheet-field" id="ce-${c.task_id}"
-            value="${endVal ? endVal.replace(' ','T').slice(0,16) : ''}"
-            style="display:${isChallenge?'block':'none'};font-size:12px;"
-            placeholder="截止時間">
           <button class="save-row-btn" onclick="saveChoreItem('${c.task_id}')">💾 儲存</button>
         </div>
         <button class="del-btn" onclick="deleteChoreItem('${c.task_id}')">🗑</button>
+      </div>
+      <div class="sheet-row challenge-row" id="cchal-${c.task_id}" style="padding:6px 10px 10px 44px;border-top:none;">
+        <div class="sheet-row-body" style="gap:6px;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:12px;color:var(--cocoa-soft);white-space:nowrap;">🔥限時雙倍</span>
+          <span style="font-size:12px;color:var(--cocoa-soft);white-space:nowrap;">維持</span>
+          <input class="sheet-field num" id="ccd-${c.task_id}" type="number" placeholder="數字" min="1" style="max-width:60px;">
+          <select class="sheet-field" id="ccu-${c.task_id}" style="max-width:80px;">
+            <option value="1">分鐘</option>
+            <option value="60">小時</option>
+          </select>
+          <button class="del-btn" onclick="clearChoreChallengeInputs('${c.task_id}')" title="清空">✕</button>
+          <button class="save-row-btn" onclick="saveChoreChallenge('${c.task_id}')">✅ 設定</button>
+          ${isChallengeActive ? `<span style="font-size:11px;color:#e6483c;font-weight:700;">🔥挑戰中・至 ${c.challenge_end_display} 截止</span>` : ''}
+        </div>
       </div>`;
   }).join('');
 }
 
-function toggleChallengeUI(taskId) {
-  const btn     = document.getElementById('cc-'+taskId);
-  const timeEl  = document.getElementById('ce-'+taskId);
-  const emojiEl = document.querySelector(`#crow-${taskId} .sheet-row-emoji`);
-  const isOn = btn.textContent.includes('挑戰中');
-  if (isOn) {
-    btn.className = 'toggle-btn off';
-    btn.style = '';
-    btn.textContent = '🔥 設挑戰';
-    timeEl.style.display = 'none';
-    if (emojiEl) emojiEl.textContent = '📋';
-  } else {
-    btn.className = 'toggle-btn on';
-    btn.style.cssText = 'background:#fff3cd;color:#c05000;border-color:#ff7f00;';
-    btn.textContent = '🔥 挑戰中';
-    timeEl.style.display = 'block';
-    if (emojiEl) emojiEl.textContent = '🔥';
+// 清空畫面上限時挑戰的持續時間輸入框（純前端）
+function clearChoreChallengeInputs(taskId) {
+  document.getElementById(`ccd-${taskId}`).value = '';
+}
+
+// 媽媽設定／取消家事限時挑戰
+// 規則：有填持續時間 → 設定挑戰；空白 → 視為取消挑戰
+async function saveChoreChallenge(taskId) {
+  const durationVal = document.getElementById(`ccd-${taskId}`).value;
+  const unit = document.getElementById(`ccu-${taskId}`).value;
+  const isCancel = !durationVal || Number(durationVal) <= 0;
+
+  const url = isCancel
+    ? `${API}?action=setChoreChallenge&taskId=${encodeURIComponent(taskId)}&isChallenge=0`
+    : `${API}?action=setChoreChallenge&taskId=${encodeURIComponent(taskId)}&isChallenge=1&durationMinutes=${encodeURIComponent(Number(durationVal) * Number(unit))}`;
+
+  try {
+    const res = await fetch(url);
+    const result = await res.json();
+    if (result.error) {
+      showToast('❌ ' + result.error, 'error');
+      return;
+    }
+    showToast(isCancel ? '已取消限時挑戰' : '🔥 限時挑戰已設定！', isCancel ? 'warn' : 'success');
+    clearChoreChallengeInputs(taskId);
+    await loadAll();
+    renderChoreEditor();
+  } catch(e) {
+    showToast('❌ 設定失敗，請重試', 'error');
   }
 }
 
@@ -1864,17 +1883,18 @@ function addMenuItem() {
 }
 
 async function saveChoreItem(taskId) {
-  const name        = document.getElementById('cn-'+taskId).value;
-  const coins       = document.getElementById('cr-'+taskId).value;
-  const diff        = document.getElementById('cd-'+taskId).value;
-  const challengeBtn= document.getElementById('cc-'+taskId);
-  const isChallenge = challengeBtn && challengeBtn.textContent.includes('挑戰中') ? 1 : 0;
-  const timeEl      = document.getElementById('ce-'+taskId);
-  const challengeEnd= timeEl ? timeEl.value.replace('T',' ') : '';
-  const url = `${API}?action=updateChore&taskId=${encodeURIComponent(taskId)}&taskName=${encodeURIComponent(name)}&rewardCoins=${coins}&difficulty=${encodeURIComponent(diff)}&isChallenge=${isChallenge}&challengeEnd=${encodeURIComponent(challengeEnd)}`;
-  try { await fetch(url); } catch(e) {}
-  showToast(isChallenge ? '🔥 限時挑戰已設定！' : '💾 已儲存家事變更', 'success');
-  setTimeout(() => { loadAll().then(() => renderChoreEditor()); }, 1000);
+  const name  = document.getElementById('cn-'+taskId).value;
+  const coins = document.getElementById('cr-'+taskId).value;
+  const diff  = document.getElementById('cd-'+taskId).value;
+  const url = `${API}?action=updateChore&taskId=${encodeURIComponent(taskId)}&taskName=${encodeURIComponent(name)}&rewardCoins=${coins}&difficulty=${encodeURIComponent(diff)}`;
+  try {
+    await fetch(url);
+    showToast('💾 已儲存家事變更', 'success');
+    await loadAll();
+    renderChoreEditor();
+  } catch(e) {
+    showToast('❌ 儲存失敗，請重試', 'error');
+  }
 }
 
 function toggleChoreActive(taskId) {
