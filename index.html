@@ -840,17 +840,14 @@ body {
       <div class="section-title" style="padding-top:14px;">🐼 執行處罰扣款</div>
       <div class="sheet-section">
         <div class="sheet-row" style="flex-direction:column;align-items:stretch;gap:8px;padding:12px;">
-          <div style="display:flex;gap:8px;">
-            <button class="toggle-btn on" id="penalty-child-candice" onclick="selectPenaltyChild('candice')" style="flex:1;">🐰 蔓蔓</button>
-            <button class="toggle-btn off" id="penalty-child-harris" onclick="selectPenaltyChild('harris')" style="flex:1;">🐻 昊昊</button>
-          </div>
           <div id="penalty-quick-list" style="display:flex;flex-direction:column;gap:6px;"></div>
           <div style="border-top:1px solid #eee;padding-top:8px;margin-top:4px;">
             <div style="font-size:12px;color:var(--cocoa-soft);font-weight:700;margin-bottom:6px;">或自訂原因扣款</div>
-            <div style="display:flex;gap:6px;">
-              <input class="sheet-field wide" id="penalty-custom-reason" placeholder="輸入違規原因">
-              <input class="sheet-field num" id="penalty-custom-amount" type="number" placeholder="扣幣">
-              <button class="save-row-btn" onclick="submitCustomPenalty()">扣款</button>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <input class="sheet-field wide" id="penalty-custom-reason" placeholder="輸入違規原因" style="flex:2;min-width:120px;">
+              <input class="sheet-field num" id="penalty-custom-amount" type="number" placeholder="扣幣" style="flex:1;min-width:60px;">
+              <button class="save-row-btn" onclick="submitCustomPenalty('candice')" style="flex:1;min-width:70px;">🐰 扣蔓蔓</button>
+              <button class="save-row-btn" onclick="submitCustomPenalty('harris')" style="flex:1;min-width:70px;">🐻 扣昊昊</button>
             </div>
           </div>
         </div>
@@ -917,7 +914,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbxCpwjqDuLPRz6OzMKbyqRv3EaRWsIWCUfIqpR5gGnyC_ZjOzgHWGXMHNR2p_F3wOHF/exec";
+const API = "https://script.google.com/macros/s/AKfycbz_VypuRmwCokFIZ_Exe-NF-AyXhAbk2YyMRBbVglPRXGqeppdPXf7ED0FXZqDEQig/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -1233,34 +1230,39 @@ function renderChores(data) {
 }
 
 // ── RENDER MY ORDERS ──
-// ── RENDER PENALTY LIST (孩子端唯讀，比照我的訂單頁呈現) ──
+// ── RENDER PENALTY LIST (孩子端唯讀，只顯示今天的紀錄；過去紀錄仍完整保留在 Google Sheet，只是不在此列出) ──
 function renderPenaltyList(data) {
   const container = document.getElementById('penalty-list');
   const countEl = document.getElementById('penalty-count');
   const speechEl = document.getElementById('panda-speech');
   const m = MEMBERS[currentChild];
-  const penalties = data.penalties || [];
+  const allPenalties = data.penalties || [];
 
-  // 偵測是否有「這個孩子之前還沒看過」的新紀錄，有的話播放哨子提示音
-  const seenKey = 'penaltySeen_' + currentChild;
+  // 取得「今天」的台灣日期字串 yyyy-MM-dd，跟 created_at 的日期部分比對
+  // （created_at 格式固定是 twNow() 產生的 "yyyy/MM/dd HH:mm"，故取前10碼並統一分隔符號比較）
+  const todayStr = getTaipeiTodayStr();
+  const todayPenalties = allPenalties.filter(p => extractDateStr(p.created_at) === todayStr);
+
+  // 偵測今天是否有「之前還沒看過」的新紀錄，有的話播放哨子提示音
+  const seenKey = 'penaltySeen_' + currentChild + '_' + todayStr;
   const seenCount = Number(penaltySeenCounts[seenKey] || 0);
-  if (penalties.length > seenCount) {
+  if (todayPenalties.length > seenCount) {
     playWhistle();
   }
-  penaltySeenCounts[seenKey] = penalties.length;
+  penaltySeenCounts[seenKey] = todayPenalties.length;
 
-  countEl.textContent = penalties.length + ' 項';
-  speechEl.textContent = penalties.length === 0
+  countEl.textContent = todayPenalties.length + ' 項';
+  speechEl.textContent = todayPenalties.length === 0
     ? '目前風平浪靜，紀律良好，繼續保持，教官會看在眼裡！'
     : '嗶嗶！這裡記錄了你的違規事項，每一筆都已經執行扣款囉，下次要多加注意！';
 
-  if (penalties.length === 0) {
-    container.innerHTML = `<div class="empty">${m.avatar} ${m.name} 目前沒有違規紀錄</div>`;
+  if (todayPenalties.length === 0) {
+    container.innerHTML = `<div class="empty">${m.avatar} ${m.name} 今天目前沒有違規紀錄</div>`;
     return;
   }
 
-  let html = `<div style="padding:10px 12px 0; font-size:13px; font-weight:700; color:var(--cocoa-soft);">${m.avatar} 顯示 ${m.name} 的紀錄</div>`;
-  html += penalties.slice().reverse().map(p => `
+  let html = `<div style="padding:10px 12px 0; font-size:13px; font-weight:700; color:var(--cocoa-soft);">${m.avatar} 顯示 ${m.name} 今天的紀錄</div>`;
+  html += todayPenalties.slice().reverse().map(p => `
     <div class="order-history-item">
       <div class="order-dot rejected"></div>
       <div class="order-info">
@@ -1271,6 +1273,24 @@ function renderPenaltyList(data) {
     </div>`).join('');
 
   container.innerHTML = html;
+}
+
+// 取得「今天」的台灣日期字串 yyyy-MM-dd，明確用台灣時區，不依賴瀏覽器當地時區
+function getTaipeiTodayStr() {
+  const now = new Date();
+  const taipeiMs = now.getTime() + (8 * 60 - now.getTimezoneOffset()) * 60000;
+  const d = new Date(taipeiMs);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+// 從 created_at 字串（格式如 "2026/06/21 14:30"）取出日期部分，統一成 yyyy-MM-dd 以便比較
+function extractDateStr(createdAt) {
+  if (!createdAt) return '';
+  const m = String(createdAt).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (!m) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
 }
 
 function renderMyOrders(data) {
@@ -1947,27 +1967,20 @@ async function adjustCoins(childId, sign) {
 }
 
 // ── 熊貓教官處罰區：媽媽端 ──
-let penaltySelectedChild = 'candice';
-
-function selectPenaltyChild(id) {
-  penaltySelectedChild = id;
-  document.getElementById('penalty-child-candice').className = 'toggle-btn ' + (id==='candice' ? 'on' : 'off');
-  document.getElementById('penalty-child-harris').className  = 'toggle-btn ' + (id==='harris'  ? 'on' : 'off');
-}
-
-// 渲染快速處罰按鈕（固定清單）+ 下方清單管理區
+// 渲染快速處罰按鈕（固定清單，每項各配「扣蔓蔓」「扣昊昊」雙按鈕）+ 下方清單管理區
 function renderPenaltyEditor() {
   const list = allData.candice?.penaltyList || [];
 
-  // 上半部：快速扣款按鈕
+  // 上半部：每個違規項目各配兩顆獨立扣款按鈕
   const quickEl = document.getElementById('penalty-quick-list');
   quickEl.innerHTML = list.length === 0
     ? `<div style="font-size:12px;color:var(--cocoa-soft);">尚未建立固定違規項目，可在下方新增，或直接用自訂原因扣款</div>`
     : list.map(p => `
-        <button class="save-row-btn" style="text-align:left;justify-content:space-between;display:flex;width:100%;"
-          onclick="applyQuickPenalty('${p.penalty_id}','${p.reason}',${p.amount})">
-          <span>${p.reason}</span><span style="color:#e6483c;">−${p.amount}</span>
-        </button>`).join('');
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f0ebe0;">
+          <div style="flex:2;min-width:0;font-size:13px;font-weight:700;">${p.reason} <span style="color:#e6483c;">−${p.amount}</span></div>
+          <button class="save-row-btn" style="flex:1;min-width:64px;" onclick="applyQuickPenalty('${p.penalty_id}','${p.reason}',${p.amount},'candice')">🐰 扣蔓蔓</button>
+          <button class="save-row-btn" style="flex:1;min-width:64px;" onclick="applyQuickPenalty('${p.penalty_id}','${p.reason}',${p.amount},'harris')">🐻 扣昊昊</button>
+        </div>`).join('');
 
   // 下半部：固定清單管理（新增/編輯/刪除）
   const editorEl = document.getElementById('penalty-editor');
@@ -1984,10 +1997,10 @@ function renderPenaltyEditor() {
     </div>`).join('');
 }
 
-// 點快速項目按鈕 → 立即執行扣款（無審核，媽媽即是審核者）
-async function applyQuickPenalty(penaltyId, reason, amount) {
-  if (!confirm(`確定對 ${MEMBERS[penaltySelectedChild].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
-  const url = `${API}?action=applyPenalty&childId=${penaltySelectedChild}&penaltyId=${encodeURIComponent(penaltyId)}`;
+// 點快速項目按鈕 → 立即對指定孩子執行扣款（無審核，媽媽即是審核者）
+async function applyQuickPenalty(penaltyId, reason, amount, childId) {
+  if (!confirm(`確定對 ${MEMBERS[childId].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
+  const url = `${API}?action=applyPenalty&childId=${childId}&penaltyId=${encodeURIComponent(penaltyId)}`;
   try {
     const res = await fetch(url);
     const result = await res.json();
@@ -2001,15 +2014,15 @@ async function applyQuickPenalty(penaltyId, reason, amount) {
   }
 }
 
-// 自訂原因手動扣款（不在固定清單裡的情況）
-async function submitCustomPenalty() {
+// 自訂原因手動扣款（不在固定清單裡的情況），childId 由按鈕直接帶入
+async function submitCustomPenalty(childId) {
   const reason = document.getElementById('penalty-custom-reason').value;
   const amount = document.getElementById('penalty-custom-amount').value;
   if (!reason) { showToast('請輸入違規原因', 'error'); return; }
   if (!amount || Number(amount) <= 0) { showToast('請輸入大於 0 的扣款金額', 'error'); return; }
-  if (!confirm(`確定對 ${MEMBERS[penaltySelectedChild].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
+  if (!confirm(`確定對 ${MEMBERS[childId].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
 
-  const url = `${API}?action=applyPenalty&childId=${penaltySelectedChild}&customReason=${encodeURIComponent(reason)}&customAmount=${encodeURIComponent(amount)}`;
+  const url = `${API}?action=applyPenalty&childId=${childId}&customReason=${encodeURIComponent(reason)}&customAmount=${encodeURIComponent(amount)}`;
   try {
     const res = await fetch(url);
     const result = await res.json();
