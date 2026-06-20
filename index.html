@@ -688,13 +688,13 @@ body {
       style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999;">
       🦊 狐狸家事布告欄
     </button>
-    <button onclick="switchSubTab('orders')" id="subtab-orders"
-      style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999; position:relative;">
-      📋 我的訂單
-    </button>
     <button onclick="switchSubTab('penalty')" id="subtab-penalty"
       style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999; position:relative;">
       🐼 熊貓教官
+    </button>
+    <button onclick="switchSubTab('orders')" id="subtab-orders"
+      style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999; position:relative;">
+      📋 我的訂單
     </button>
   </div>
   <div style="display:flex; justify-content:flex-end; padding:10px 14px 0;">
@@ -773,11 +773,11 @@ body {
     <!-- Mama Tabs -->
     <div class="mama-tabs">
       <button class="mama-tab-btn active" onclick="switchMamaTab('approve')" id="mtab-approve">✋ 審核</button>
-      <button class="mama-tab-btn" onclick="switchMamaTab('orders')"  id="mtab-orders">🛒 訂單</button>
       <button class="mama-tab-btn" onclick="switchMamaTab('coins')"   id="mtab-coins">🪙 代幣</button>
       <button class="mama-tab-btn" onclick="switchMamaTab('menu-edit')" id="mtab-menu-edit">🍱 菜單</button>
       <button class="mama-tab-btn" onclick="switchMamaTab('chore-edit')" id="mtab-chore-edit">🐱 家事</button>
       <button class="mama-tab-btn" onclick="switchMamaTab('penalty-edit')" id="mtab-penalty-edit">🐼 處罰</button>
+      <button class="mama-tab-btn" onclick="switchMamaTab('orders')"  id="mtab-orders">🛒 訂單</button>
     </div>
     <!-- 自動重整倒數 -->
     <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 14px; font-size:11px; font-weight:700; color:var(--cocoa-soft); background:white; border-bottom:1px solid #eee;">
@@ -1100,7 +1100,9 @@ async function loadAll() {
     allData.harris  = await hRes.json();
     localChoreStatus = {}; // 兩個孩子的最新資料都拿到了，清空本地暫存，之後畫面完全依賴後端真實資料
     updateBalanceDisplay();
-    renderSubTab(currentSubTab);
+    // 只在孩子端頁面實際顯示中才渲染孩子端分頁，避免媽媽端刷新時意外觸發孩子端畫面更新與音效（例如熊貓教官的哨子聲）
+    const childPageActive = document.getElementById('child-page')?.classList.contains('active');
+    if (childPageActive) renderSubTab(currentSubTab);
   } catch(e) {
     showToast('⚠️ 載入失敗，請檢查網路', 'error');
   }
@@ -1912,10 +1914,19 @@ async function childCancelOrder(orderId, coins) {
   }
 }
 
+// 防止連點重複執行：代幣調整操作期間鎖住按鈕
+let processingCoinAdjust = false;
+
 async function adjustCoins(childId, sign) {
+  if (processingCoinAdjust) return; // 已經在處理中，忽略這次點擊
   const inp = document.getElementById('adj-'+childId);
   const amt = parseInt(inp.value);
   if (!amt || amt <= 0) { showToast('請輸入有效數量', 'error'); return; }
+
+  processingCoinAdjust = true;
+  const btns = document.querySelectorAll(`[onclick*="adjustCoins('${childId}'"]`);
+  btns.forEach(b => b.disabled = true);
+
   const action = sign > 0 ? 'addCoins' : 'deductCoins';
   const url = `${API}?action=${action}&childId=${childId}&amount=${amt}`;
   try {
@@ -1930,7 +1941,9 @@ async function adjustCoins(childId, sign) {
     }
   } catch(e) { showToast('⚠️ 網路錯誤', 'error'); }
   inp.value = '';
-  setTimeout(() => { loadAll().then(() => renderCoins()); }, 1000);
+  await loadAll();
+  renderCoins();
+  processingCoinAdjust = false;
 }
 
 // ── 熊貓教官處罰區：媽媽端 ──
