@@ -697,14 +697,14 @@ body {
       🐼 熊貓教官
     </button>
   </div>
+  <div style="display:flex; justify-content:flex-end; padding:10px 14px 0;">
+    <button onclick="manualRefreshChild()" id="refresh-btn" style="background:white;border:2px solid var(--cocoa);border-radius:50px;padding:6px 14px;font-family:inherit;font-size:12px;font-weight:700;color:var(--cocoa);cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:2px 2px 0 var(--cocoa);">
+      🔄 立即更新
+    </button>
+  </div>
 
   <!-- SUB TAB: MENU -->
   <div id="sub-menu" class="sub-panel active">
-    <div style="display:flex; justify-content:flex-end; padding:10px 14px 0;">
-      <button onclick="manualRefresh()" id="refresh-btn" style="background:white;border:2px solid var(--cocoa);border-radius:50px;padding:6px 14px;font-family:inherit;font-size:12px;font-weight:700;color:var(--cocoa);cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:2px 2px 0 var(--cocoa);">
-        🔄 立即更新
-      </button>
-    </div>
     <div class="mascot-banner">
       <div class="mascot-bob" id="bear-mascot"></div>
       <div class="mascot-speech"><span class="bpm"><sup>ㄏㄨㄢ</sup><span class="bpm-char">歡</span></span><span class="bpm"><sup>ㄧㄥˊ</sup><span class="bpm-char">迎</span></span><span class="bpm"><sup>ㄍㄨㄤ</sup><span class="bpm-char">光</span></span><span class="bpm"><sup>ㄌㄧㄣˊ</sup><span class="bpm-char">臨</span></span>！<span class="bpm"><sup>ㄐㄧㄣ</sup><span class="bpm-char">今</span></span><span class="bpm"><sup>ㄊㄧㄢ</sup><span class="bpm-char">天</span></span><span class="bpm"><sup>ㄉㄜ˙</sup><span class="bpm-char">的</span></span><span class="bpm"><sup>ㄊㄜˋ</sup><span class="bpm-char">特</span></span><span class="bpm"><sup>ㄑㄩㄢˊ</sup><span class="bpm-char">權</span></span><span class="bpm"><sup>ㄩˇ</sup><span class="bpm-char">與</span></span><span class="bpm"><sup>ㄒㄧㄢˋ</sup><span class="bpm-char">現</span></span><span class="bpm"><sup>ㄗㄨㄛˋ</sup><span class="bpm-char">做</span></span><span class="bpm"><sup>ㄉㄧㄢˇ</sup><span class="bpm-char">點</span></span><span class="bpm"><sup>ㄒㄧㄣ</sup><span class="bpm-char">心</span></span><span class="bpm"><sup>ㄉㄡ</sup><span class="bpm-char">都</span></span><span class="bpm"><sup>ㄖㄜˋ</sup><span class="bpm-char">熱</span></span><span class="bpm"><sup>ㄊㄥˊ</sup><span class="bpm-char">騰</span></span><span class="bpm"><sup>ㄊㄥˊ</sup><span class="bpm-char">騰</span></span><span class="bpm"><sup>ㄉㄧˋ</sup><span class="bpm-char">地</span></span><span class="bpm"><sup>ㄕㄤˋ</sup><span class="bpm-char">上</span></span><span class="bpm"><sup>ㄐㄧㄚˋ</sup><span class="bpm-char">架</span></span><span class="bpm"><sup>ㄌㄨㄛ˙</sup><span class="bpm-char">囉</span></span>！<span class="bpm"><sup>ㄑㄧㄥˇ</sup><span class="bpm-char">請</span></span><span class="bpm"><sup>ㄊㄧㄠ</sup><span class="bpm-char">挑</span></span><span class="bpm"><sup>ㄒㄩㄢˇ</sup><span class="bpm-char">選</span></span><span class="bpm"><sup>ㄒㄧˇ</sup><span class="bpm-char">喜</span></span><span class="bpm"><sup>ㄏㄨㄢ</sup><span class="bpm-char">歡</span></span><span class="bpm"><sup>ㄉㄜ˙</sup><span class="bpm-char">的</span></span><span class="bpm"><sup>ㄉㄧㄢˇ</sup><span class="bpm-char">點</span></span><span class="bpm"><sup>ㄒㄧㄣ</sup><span class="bpm-char">心</span></span>，<span class="bpm"><sup>ㄓˇ</sup><span class="bpm-char">只</span></span><span class="bpm"><sup>ㄧㄠˋ</sup><span class="bpm-char">要</span></span><span class="bpm"><sup>ㄘㄨㄣˊ</sup><span class="bpm-char">存</span></span><span class="bpm"><sup>ㄑㄧㄢˊ</sup><span class="bpm-char">錢</span></span><span class="bpm"><sup>ㄊㄨㄥˇ</sup><span class="bpm-char">筒</span></span><span class="bpm"><sup>ㄉㄜ˙</sup><span class="bpm-char">的</span></span><span class="bpm"><sup>ㄉㄞˋ</sup><span class="bpm-char">代</span></span><span class="bpm"><sup>ㄅㄧˋ</sup><span class="bpm-char">幣</span></span><span class="bpm"><sup>ㄗㄨˊ</sup><span class="bpm-char">足</span></span><span class="bpm"><sup>ㄍㄡˋ</sup><span class="bpm-char">夠</span></span>，<span class="bpm"><sup>ㄉㄧㄢˇ</sup><span class="bpm-char">點</span></span><span class="bpm"><sup>ㄐㄧ</sup><span class="bpm-char">擊</span></span><span class="bpm"><sup>ㄐㄧㄡˋ</sup><span class="bpm-char">就</span></span><span class="bpm"><sup>ㄋㄥˊ</sup><span class="bpm-char">能</span></span><span class="bpm"><sup>ㄓˊ</sup><span class="bpm-char">直</span></span><span class="bpm"><sup>ㄐㄧㄝ</sup><span class="bpm-char">接</span></span><span class="bpm"><sup>ㄉㄨㄟˋ</sup><span class="bpm-char">兌</span></span><span class="bpm"><sup>ㄏㄨㄢˋ</sup><span class="bpm-char">換</span></span><span class="bpm"><sup>ㄒㄧㄤˇ</sup><span class="bpm-char">享</span></span><span class="bpm"><sup>ㄩㄥˋ</sup><span class="bpm-char">用</span></span><span class="bpm"><sup>ㄛ˙</sup><span class="bpm-char">喔</span></span>！</div>
@@ -739,7 +739,7 @@ body {
   <div id="sub-penalty" class="sub-panel">
     <div class="mascot-banner">
       <div class="mascot-bob" id="panda-mascot"></div>
-      <div class="mascot-speech" id="panda-speech">嗶嗶！熊貓教官在此站崗，誰沒守規矩，教官的眼睛可是雪亮的！每犯一次錯，存錢筒就要扣一點代幣，下次注意囉！</div>
+      <div class="mascot-speech" id="panda-speech"><span class="bpm"><sup>ㄅㄧˋ</sup><span class="bpm-char">嗶</span></span><span class="bpm"><sup>ㄅㄧˋ</sup><span class="bpm-char">嗶</span></span>！<span class="bpm"><sup>ㄒㄩㄥˊ</sup><span class="bpm-char">熊</span></span><span class="bpm"><sup>ㄇㄠ</sup><span class="bpm-char">貓</span></span><span class="bpm"><sup>ㄐㄧㄠˋ</sup><span class="bpm-char">教</span></span><span class="bpm"><sup>ㄍㄨㄢ</sup><span class="bpm-char">官</span></span><span class="bpm"><sup>ㄗㄞˋ</sup><span class="bpm-char">在</span></span><span class="bpm"><sup>ㄘˇ</sup><span class="bpm-char">此</span></span><span class="bpm"><sup>ㄓㄢˋ</sup><span class="bpm-char">站</span></span><span class="bpm"><sup>ㄍㄤˇ</sup><span class="bpm-char">崗</span></span>，<span class="bpm"><sup>ㄕㄟˊ</sup><span class="bpm-char">誰</span></span><span class="bpm"><sup>ㄇㄟˊ</sup><span class="bpm-char">沒</span></span><span class="bpm"><sup>ㄕㄡˇ</sup><span class="bpm-char">守</span></span><span class="bpm"><sup>ㄍㄨㄟ</sup><span class="bpm-char">規</span></span><span class="bpm"><sup>ㄐㄩˇ</sup><span class="bpm-char">矩</span></span>，<span class="bpm"><sup>ㄐㄧㄠˋ</sup><span class="bpm-char">教</span></span><span class="bpm"><sup>ㄍㄨㄢ</sup><span class="bpm-char">官</span></span><span class="bpm"><sup>ㄉㄜ˙</sup><span class="bpm-char">的</span></span><span class="bpm"><sup>ㄧㄢˇ</sup><span class="bpm-char">眼</span></span><span class="bpm"><sup>ㄐㄧㄥ</sup><span class="bpm-char">睛</span></span><span class="bpm"><sup>ㄎㄜˇ</sup><span class="bpm-char">可</span></span><span class="bpm"><sup>ㄕˋ</sup><span class="bpm-char">是</span></span><span class="bpm"><sup>ㄒㄩㄝˇ</sup><span class="bpm-char">雪</span></span><span class="bpm"><sup>ㄌㄧㄤˋ</sup><span class="bpm-char">亮</span></span><span class="bpm"><sup>ㄉㄜ˙</sup><span class="bpm-char">的</span></span>！<span class="bpm"><sup>ㄇㄟˇ</sup><span class="bpm-char">每</span></span><span class="bpm"><sup>ㄈㄢˋ</sup><span class="bpm-char">犯</span></span><span class="bpm"><sup>ㄧ</sup><span class="bpm-char">一</span></span><span class="bpm"><sup>ㄘˋ</sup><span class="bpm-char">次</span></span><span class="bpm"><sup>ㄘㄨㄛˋ</sup><span class="bpm-char">錯</span></span>，<span class="bpm"><sup>ㄘㄨㄣˊ</sup><span class="bpm-char">存</span></span><span class="bpm"><sup>ㄑㄧㄢˊ</sup><span class="bpm-char">錢</span></span><span class="bpm"><sup>ㄊㄨㄥˇ</sup><span class="bpm-char">筒</span></span><span class="bpm"><sup>ㄐㄧㄡˋ</sup><span class="bpm-char">就</span></span><span class="bpm"><sup>ㄧㄠˋ</sup><span class="bpm-char">要</span></span><span class="bpm"><sup>ㄎㄡˋ</sup><span class="bpm-char">扣</span></span><span class="bpm"><sup>ㄧ</sup><span class="bpm-char">一</span></span><span class="bpm"><sup>ㄉㄧㄢˇ</sup><span class="bpm-char">點</span></span><span class="bpm"><sup>ㄉㄞˋ</sup><span class="bpm-char">代</span></span><span class="bpm"><sup>ㄅㄧˋ</sup><span class="bpm-char">幣</span></span>，<span class="bpm"><sup>ㄒㄧㄚˋ</sup><span class="bpm-char">下</span></span><span class="bpm"><sup>ㄘˋ</sup><span class="bpm-char">次</span></span><span class="bpm"><sup>ㄓㄨˋ</sup><span class="bpm-char">注</span></span><span class="bpm"><sup>ㄧˋ</sup><span class="bpm-char">意</span></span><span class="bpm"><sup>ㄌㄨㄛ˙</sup><span class="bpm-char">囉</span></span>！</div>
     </div>
     <div class="section-title">🐼 違規紀錄 <span class="pill" id="penalty-count">載入中</span></div>
     <div id="penalty-list">
@@ -785,9 +785,7 @@ body {
         ← 返回點餐
       </button>
       <div>
-        自動更新 <span id="refresh-indicator" style="font-weight:800;">🔄 30s</span>
-        &nbsp;
-        <button onclick="manualRefresh()" style="background:var(--mango);border:1px solid var(--cocoa);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">立即更新</button>
+        <button onclick="manualRefreshMama()" style="background:var(--mango);border:1px solid var(--cocoa);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">🔄 立即更新</button>
       </div>
     </div>
 
@@ -1082,8 +1080,8 @@ function renderSubTab(tab) {
   if (tab === 'penalty') renderPenaltyList(data);
 }
 
-// 手動立即更新按鈕
-async function manualRefresh() {
+// 孩子端：手動立即更新按鈕
+async function manualRefreshChild() {
   const btn = document.getElementById('refresh-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '🔄 更新中...'; }
   await loadAll();
@@ -1243,18 +1241,15 @@ function renderPenaltyList(data) {
   const todayStr = getTaipeiTodayStr();
   const todayPenalties = allPenalties.filter(p => extractDateStr(p.created_at) === todayStr);
 
-  // 偵測今天是否有「之前還沒看過」的新紀錄，有的話播放哨子提示音
-  const seenKey = 'penaltySeen_' + currentChild + '_' + todayStr;
-  const seenCount = Number(penaltySeenCounts[seenKey] || 0);
-  if (todayPenalties.length > seenCount) {
+  // 只要今天有違規紀錄，每次進入/刷新此分頁都播放哨子提示音
+  if (todayPenalties.length > 0) {
     playWhistle();
   }
-  penaltySeenCounts[seenKey] = todayPenalties.length;
 
   countEl.textContent = todayPenalties.length + ' 項';
-  speechEl.textContent = todayPenalties.length === 0
+  speechEl.innerHTML = rb(todayPenalties.length === 0
     ? '目前風平浪靜，紀律良好，繼續保持，教官會看在眼裡！'
-    : '嗶嗶！這裡記錄了你的違規事項，每一筆都已經執行扣款囉，下次要多加注意！';
+    : '嗶嗶！這裡記錄了你的違規事項，每一筆都已經執行扣款囉，下次要多加注意！');
 
   if (todayPenalties.length === 0) {
     container.innerHTML = `<div class="empty">${m.avatar} ${m.name} 今天目前沒有違規紀錄</div>`;
@@ -1522,52 +1517,25 @@ function checkPin() {
   }
 }
 
-// ── 媽媽後台自動重整（每30秒）──
+// ── 媽媽後台自動重整（每30秒，背景運作，畫面上不顯示倒數狀態）──
 let mamaRefreshTimer = null;
-let mamaCountdown = 30;
-let mamaCountdownTimer = null;
 
 function startMamaAutoRefresh() {
   stopMamaAutoRefresh();
 
-  // 倒數計時顯示
-  mamaCountdown = 30;
-  updateRefreshIndicator();
-
-  mamaCountdownTimer = setInterval(() => {
-    mamaCountdown--;
-    updateRefreshIndicator();
-    if (mamaCountdown <= 0) mamaCountdown = 30;
-  }, 1000);
-
   // 每30秒重新載入資料
   mamaRefreshTimer = setInterval(async () => {
-    // 只在審核和訂單頁自動刷新（避免打斷編輯中的菜單/家事）
+    // 只在審核和訂單頁自動刷新（避免打斷編輯中的菜單/家事/處罰）
     if (currentMamaTab === 'approve' || currentMamaTab === 'orders') {
       await loadAll();
       loadMamaTab(currentMamaTab);
       showToast('🔄 已自動更新', '');
     }
-    mamaCountdown = 30;
   }, 30000);
 }
 
 function stopMamaAutoRefresh() {
-  if (mamaRefreshTimer)    { clearInterval(mamaRefreshTimer);    mamaRefreshTimer = null; }
-  if (mamaCountdownTimer)  { clearInterval(mamaCountdownTimer);  mamaCountdownTimer = null; }
-}
-
-function updateRefreshIndicator() {
-  const el = document.getElementById('refresh-indicator');
-  if (!el) return;
-  const isActive = currentMamaTab === 'approve' || currentMamaTab === 'orders';
-  if (isActive) {
-    el.textContent = `🔄 ${mamaCountdown}s`;
-    el.style.color = mamaCountdown <= 10 ? 'var(--mint)' : 'var(--cocoa-soft)';
-  } else {
-    el.textContent = '⏸ 暫停';
-    el.style.color = '#ccc';
-  }
+  if (mamaRefreshTimer) { clearInterval(mamaRefreshTimer); mamaRefreshTimer = null; }
 }
 
 function switchMamaTab(tab) {
@@ -1576,15 +1544,14 @@ function switchMamaTab(tab) {
   document.getElementById('mtab-'+tab).classList.add('active');
   document.querySelectorAll('.mama-tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('mtab-content-'+tab).classList.add('active');
-  updateRefreshIndicator(); // 切換頁籤時更新倒數狀態
   loadMamaTab(tab);
 }
 
-async function manualRefresh() {
+// 媽媽端：手動立即更新按鈕
+async function manualRefreshMama() {
   showToast('🔄 更新中...', '');
   await loadAll();
   loadMamaTab(currentMamaTab);
-  mamaCountdown = 30;
   showToast('✅ 已更新！', 'success');
 }
 
@@ -1998,8 +1965,15 @@ function renderPenaltyEditor() {
 }
 
 // 點快速項目按鈕 → 立即對指定孩子執行扣款（無審核，媽媽即是審核者）
+// 防止連點重複扣款：媽媽端扣款操作期間鎖住，避免快速點兩下執行兩次
+let processingPenalty = false;
+
 async function applyQuickPenalty(penaltyId, reason, amount, childId) {
+  if (processingPenalty) return; // 已經有扣款在處理中，忽略這次點擊
   if (!confirm(`確定對 ${MEMBERS[childId].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
+  processingPenalty = true;
+  document.querySelectorAll('#penalty-quick-list button, .mama-tab-content button[onclick*="submitCustomPenalty"]').forEach(b => b.disabled = true);
+
   const url = `${API}?action=applyPenalty&childId=${childId}&penaltyId=${encodeURIComponent(penaltyId)}`;
   try {
     const res = await fetch(url);
@@ -2011,16 +1985,21 @@ async function applyQuickPenalty(penaltyId, reason, amount, childId) {
     renderPenaltyEditor();
   } catch(e) {
     showToast('❌ 扣款失敗，請重試', 'error');
+  } finally {
+    processingPenalty = false;
   }
 }
 
 // 自訂原因手動扣款（不在固定清單裡的情況），childId 由按鈕直接帶入
 async function submitCustomPenalty(childId) {
+  if (processingPenalty) return; // 已經有扣款在處理中，忽略這次點擊
   const reason = document.getElementById('penalty-custom-reason').value;
   const amount = document.getElementById('penalty-custom-amount').value;
   if (!reason) { showToast('請輸入違規原因', 'error'); return; }
   if (!amount || Number(amount) <= 0) { showToast('請輸入大於 0 的扣款金額', 'error'); return; }
   if (!confirm(`確定對 ${MEMBERS[childId].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
+  processingPenalty = true;
+  document.querySelectorAll('#penalty-quick-list button, .mama-tab-content button[onclick*="submitCustomPenalty"]').forEach(b => b.disabled = true);
 
   const url = `${API}?action=applyPenalty&childId=${childId}&customReason=${encodeURIComponent(reason)}&customAmount=${encodeURIComponent(amount)}`;
   try {
@@ -2035,6 +2014,8 @@ async function submitCustomPenalty(childId) {
     renderPenaltyEditor();
   } catch(e) {
     showToast('❌ 扣款失敗，請重試', 'error');
+  } finally {
+    processingPenalty = false;
   }
 }
 
@@ -2364,11 +2345,11 @@ function pandaOfficerSVG(size=72) {
     <!-- cheeks -->
     <ellipse cx="22" cy="78" rx="8" ry="5.5" fill="#f9b8cb" opacity="0.55"/>
     <ellipse cx="78" cy="78" rx="8" ry="5.5" fill="#f9b8cb" opacity="0.55"/>
-    <!-- officer cap, sitting low on top of head -->
-    <path d="M16 24 Q16 22 50 22 Q84 22 84 24 L84 33 Q68 26 50 26 Q32 26 16 33 Z" fill="#185FA5" stroke="#2a1a0e" stroke-width="3"/>
-    <rect x="16" y="29" width="68" height="7" fill="#0C447C" rx="2"/>
-    <circle cx="50" cy="24" r="6.5" fill="#FAC775" stroke="#2a1a0e" stroke-width="1.8"/>
-    <path d="M47.3 24 L49.5 26.2 L53.5 21.8" stroke="#412402" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- officer cap, sitting low, overlapping into the head circle to avoid an edge-to-edge seam -->
+    <path d="M16 27 Q16 25 50 25 Q84 25 84 27 L84 36 Q68 29 50 29 Q32 29 16 36 Z" fill="#185FA5" stroke="#2a1a0e" stroke-width="3"/>
+    <rect x="16" y="32" width="68" height="7" fill="#0C447C" rx="2"/>
+    <circle cx="50" cy="27" r="6.5" fill="#FAC775" stroke="#2a1a0e" stroke-width="1.8"/>
+    <path d="M47.3 27 L49.5 29.2 L53.5 24.8" stroke="#412402" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     <!-- paws -->
     <ellipse cx="29" cy="98" rx="11" ry="8" fill="#2a1a0e" stroke="#2a1a0e" stroke-width="2.5"/>
     <ellipse cx="71" cy="98" rx="11" ry="8" fill="#2a1a0e" stroke="#2a1a0e" stroke-width="2.5"/>
