@@ -871,8 +871,8 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbwxmi6wxspsmILpSFDnKc0FQXFKIAjowaAeY3TA8laXp4m_XXqth_Wte0VoH60ShZT1/exec";
-const PIN = "5068"; // ← 改成你要的密碼
+const API = "https://script.google.com/macros/s/AKfycbyjfW6kfL0n5KAvcFXHpw2EROq6W_w6dz4RJOECYpcFPT64iSVJBoMCD5Zhve64LIxp/exec";
+const PIN = "1234"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
@@ -1091,7 +1091,7 @@ function renderMenu(data) {
            ${C(15)} <span style="color:#e6483c;font-weight:800;">${m.sale_price}</span>
          </div>`
       : `<div class="price-tag" style="display:flex;align-items:center;gap:4px;">${C(15)} ${m.price_coins}</div>`;
-    const saleBadge = onSale ? `<div class="stock-badge" style="left:6px;right:auto;background:#e6483c;">🔥 特價中</div>` : '';
+    const saleBadge = onSale ? `<div class="stock-badge" style="left:6px;right:auto;top:6px;bottom:auto;background:#e6483c;">🔥 特價中</div>` : '';
     return `
       <div class="menu-card">
         <div class="menu-photo">
@@ -1645,11 +1645,13 @@ function renderMenuEditor() {
 }
 
 // 把後端的時間字串轉成 <input type="datetime-local"> 需要的格式 (yyyy-MM-ddTHH:mm)
+// 注意：不能用 new Date() 解析再用 getHours() 取值，那樣會被瀏覽器當地時區影響、
+// 跟原始存的數字不一致；改用正則直接拆解字串，顯示出來的數字保證跟存進去的一模一樣
 function toDatetimeLocalValue(dateStr) {
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '';
+  const m = String(dateStr).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})/);
+  if (!m) return '';
   const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${m[1]}-${pad(m[2])}-${pad(m[3])}T${pad(m[4])}:${pad(m[5])}`;
 }
 
 // 媽媽設定限時特價
