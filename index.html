@@ -412,6 +412,27 @@ body {
 .toast.error   { background:var(--rose); }
 .toast.warn    { background:var(--mango-dark); }
 
+/* ── CONFIRM DIALOG（自製確認框，取代瀏覽器原生 confirm()，相容所有裝置）── */
+.confirm-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.55);
+  display:flex; align-items:center; justify-content:center;
+  z-index:800; padding:20px; opacity:0; pointer-events:none; transition:opacity 0.2s;
+}
+.confirm-overlay.show { opacity:1; pointer-events:auto; }
+.confirm-box {
+  background:var(--cream); border:3px solid var(--cocoa); border-radius:20px;
+  padding:24px 20px 16px; max-width:320px; width:100%;
+  box-shadow: 4px 4px 0 var(--cocoa); text-align:center;
+}
+.confirm-msg { font-size:15px; font-weight:700; line-height:1.5; margin-bottom:16px; }
+.confirm-btns { display:flex; gap:10px; justify-content:center; }
+.confirm-btns button {
+  flex:1; padding:10px; border-radius:10px; font-family:inherit;
+  font-size:14px; font-weight:700; cursor:pointer; border:2px solid var(--cocoa);
+}
+.confirm-ok  { background:var(--rose); color:white; }
+.confirm-cancel { background:white; color:var(--cocoa); }
+
 /* ── INSUFFICIENT FUNDS MODAL ── */
 .funds-modal {
   position:absolute; inset:0; background:rgba(0,0,0,0.6); z-index:400;
@@ -681,7 +702,7 @@ body {
   <!-- Sub tabs: 點餐 / 賺coins -->
   <div style="display:flex; gap:0; border-bottom:2px solid #e0d0c0; background:white;">
     <button onclick="switchSubTab('menu')" id="subtab-menu"
-      style="flex:1;padding:11px;border:none;background:var(--mango);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;border-right:2px solid #e0d0c0;">
+      style="flex:1;padding:11px;border:none;background:var(--mango);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;">
       🐻 小熊美味餐館
     </button>
     <button onclick="switchSubTab('chores')" id="subtab-chores"
@@ -689,11 +710,11 @@ body {
       🦊 狐狸家事布告欄
     </button>
     <button onclick="switchSubTab('penalty')" id="subtab-penalty"
-      style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999; position:relative;">
+      style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999;">
       🐼 熊貓教官
     </button>
     <button onclick="switchSubTab('orders')" id="subtab-orders"
-      style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999; position:relative;">
+      style="flex:1;padding:11px;border:none;background:white;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:#999;">
       📋 我的訂單
     </button>
   </div>
@@ -772,12 +793,12 @@ body {
   <div class="mama-content" id="mama-content">
     <!-- Mama Tabs -->
     <div class="mama-tabs">
-      <button class="mama-tab-btn active" onclick="switchMamaTab('approve')" id="mtab-approve">✋ 審核</button>
-      <button class="mama-tab-btn" onclick="switchMamaTab('coins')"   id="mtab-coins">🪙 代幣</button>
-      <button class="mama-tab-btn" onclick="switchMamaTab('menu-edit')" id="mtab-menu-edit">🍱 菜單</button>
-      <button class="mama-tab-btn" onclick="switchMamaTab('chore-edit')" id="mtab-chore-edit">🐱 家事</button>
+      <button class="mama-tab-btn active" onclick="switchMamaTab('coins')"   id="mtab-coins">🪙 代幣</button>
+      <button class="mama-tab-btn" onclick="switchMamaTab('approve')" id="mtab-approve">✋ 審核</button>
       <button class="mama-tab-btn" onclick="switchMamaTab('penalty-edit')" id="mtab-penalty-edit">🐼 處罰</button>
       <button class="mama-tab-btn" onclick="switchMamaTab('orders')"  id="mtab-orders">🛒 訂單</button>
+      <button class="mama-tab-btn" onclick="switchMamaTab('menu-edit')" id="mtab-menu-edit">🍱 菜單</button>
+      <button class="mama-tab-btn" onclick="switchMamaTab('chore-edit')" id="mtab-chore-edit">🐱 家事</button>
     </div>
     <!-- 自動重整倒數 -->
     <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 14px; font-size:11px; font-weight:700; color:var(--cocoa-soft); background:white; border-bottom:1px solid #eee;">
@@ -790,7 +811,7 @@ body {
     </div>
 
     <!-- TAB: APPROVE CHORES -->
-    <div class="mama-tab-content active" id="mtab-content-approve">
+    <div class="mama-tab-content" id="mtab-content-approve">
       <div class="mama-stats" id="approve-stats"></div>
       <div class="section-title" style="padding-top:14px;">⏳ 待審核家事 <span class="pill" id="pending-count">0</span></div>
       <div id="approve-list"><div class="loading-spinner"><div class="spinner"></div><div>載入中...</div></div></div>
@@ -803,7 +824,7 @@ body {
     </div>
 
     <!-- TAB: COINS -->
-    <div class="mama-tab-content" id="mtab-content-coins">
+    <div class="mama-tab-content active" id="mtab-content-coins">
       <div class="section-title" style="padding-top:14px;">🪙 代幣帳戶管理</div>
       <div class="balance-grid" id="balance-grid"></div>
       <div style="padding:0 12px;">
@@ -907,12 +928,21 @@ body {
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="confirm-btns">
+      <button class="confirm-cancel" id="confirm-cancel-btn">取消</button>
+      <button class="confirm-ok"     id="confirm-ok-btn">確定</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════════ -->
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbz_VypuRmwCokFIZ_Exe-NF-AyXhAbk2YyMRBbVglPRXGqeppdPXf7ED0FXZqDEQig/exec";
+const API = "https://script.google.com/macros/s/AKfycby9piHHMuRm4NQ3vvJ49gJNd7uSZkKpN1vBm7Zf_6eiKkHLqlb79Vw9tn4s4id9FPKA/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -942,7 +972,7 @@ let allData = {}; // { candice:{balance,chores,menu,orders}, harris:{...} }
 let carts = { candice: [], harris: [] }; // 每個孩子各自的購物車
 let penaltySeenCounts = {}; // 記錄每個孩子已經看過的處罰紀錄數量，用來偵測新紀錄並提示音效
 let currentSubTab = "menu";
-let currentMamaTab = "approve";
+let currentMamaTab = "coins";
 let mamaUnlocked = false;
 let localChoreStatus = {}; // choreId_childId → status (local until API confirms)
 
@@ -1869,7 +1899,7 @@ async function approveChore(choreId, childId, coins, taskName) {
 }
 
 async function rejectChore(choreId, childId, taskName) {
-  if (!confirm(`確定退回「${taskName}」？\n${MEMBERS[childId].name} 需要重新完成`)) return;
+  if (!await showConfirm(`確定退回「${taskName}」？\n${MEMBERS[childId].name} 需要重新完成`)) return;
   const url = `${API}?action=rejectChore&taskId=${encodeURIComponent(choreId)}&childId=${childId}`;
   try { await fetch(url); } catch(e) {}
   showToast('已退回，請重新完成', 'error');
@@ -1884,7 +1914,7 @@ async function approveOrder(orderId, childId, itemName, coins) {
 }
 
 async function rejectOrder(orderId, childId, itemName, coins) {
-  if (!confirm(`取消「${itemName}」訂單？\n將退還 ${coins} 枚代幣給 ${MEMBERS[childId].name}`)) return;
+  if (!await showConfirm(`取消「${itemName}」訂單？\n將退還 ${coins} 枚代幣給 ${MEMBERS[childId].name}`)) return;
   const url = `${API}?action=rejectPurchase&orderId=${encodeURIComponent(orderId)}&childId=${childId}`;
   try { await fetch(url); } catch(e) {}
   showToast('訂單已取消，代幣退還', 'warn');
@@ -1983,7 +2013,7 @@ let processingPenalty = false;
 
 async function applyQuickPenalty(penaltyId, reason, amount, childId) {
   if (processingPenalty) return; // 已經有扣款在處理中，忽略這次點擊
-  if (!confirm(`確定對 ${MEMBERS[childId].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
+  if (!await showConfirm(`確定對 ${MEMBERS[childId].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
   processingPenalty = true;
   document.querySelectorAll('#penalty-quick-list button, .mama-tab-content button[onclick*="submitCustomPenalty"]').forEach(b => b.disabled = true);
 
@@ -2010,7 +2040,7 @@ async function submitCustomPenalty(childId) {
   const amount = document.getElementById('penalty-custom-amount').value;
   if (!reason) { showToast('請輸入違規原因', 'error'); return; }
   if (!amount || Number(amount) <= 0) { showToast('請輸入大於 0 的扣款金額', 'error'); return; }
-  if (!confirm(`確定對 ${MEMBERS[childId].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
+  if (!await showConfirm(`確定對 ${MEMBERS[childId].name} 執行「${reason}」扣款 ${amount} 枚代幣？`)) return;
   processingPenalty = true;
   document.querySelectorAll('#penalty-quick-list button, .mama-tab-content button[onclick*="submitCustomPenalty"]').forEach(b => b.disabled = true);
 
@@ -2057,7 +2087,7 @@ async function savePenaltyListItem(penaltyId) {
 }
 
 async function deletePenaltyListItem(penaltyId) {
-  if (!confirm('確定刪除這個違規項目？')) return;
+  if (!await showConfirm('確定刪除這個違規項目？')) return;
   const url = `${API}?action=deletePenaltyItem&penaltyId=${encodeURIComponent(penaltyId)}`;
   try { await fetch(url); } catch(e) {}
   showToast('🗑 已刪除', 'warn');
@@ -2076,7 +2106,7 @@ async function saveMenuItem(foodId) {
 }
 
 async function deleteMenuItem(foodId) {
-  if (!confirm('確定刪除這個品項？')) return;
+  if (!await showConfirm('確定刪除這個品項？')) return;
   const url = `${API}?action=deleteMenuItem&foodId=${encodeURIComponent(foodId)}`;
   try { await fetch(url); } catch(e) {}
   showToast('🗑 品項已刪除', 'warn');
@@ -2117,7 +2147,7 @@ function toggleChoreActive(taskId) {
 }
 
 async function deleteChoreItem(taskId) {
-  if (!confirm('確定刪除這個家事任務？')) return;
+  if (!await showConfirm('確定刪除這個家事任務？')) return;
   const url = `${API}?action=deleteChore&taskId=${encodeURIComponent(taskId)}`;
   try { await fetch(url); } catch(e) {}
   showToast('🗑 任務已刪除', 'warn');
@@ -2139,6 +2169,35 @@ function showToast(msg, type) {
   t.className = 'toast show ' + type;
   clearTimeout(t._t);
   t._t = setTimeout(() => t.className = 'toast', 2800);
+}
+
+// 自製確認框：取代瀏覽器原生 confirm()，在所有裝置（含 iOS Safari）上行為一致
+// 用法：const ok = await showConfirm('確定要執行嗎？');
+// 回傳 true（使用者點確定）或 false（使用者點取消）
+function showConfirm(msg) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('confirm-overlay');
+    document.getElementById('confirm-msg').textContent = msg;
+    syncOverlayPositions();
+    overlay.classList.add('show');
+
+    function onOk() {
+      overlay.classList.remove('show');
+      cleanup();
+      resolve(true);
+    }
+    function onCancel() {
+      overlay.classList.remove('show');
+      cleanup();
+      resolve(false);
+    }
+    function cleanup() {
+      document.getElementById('confirm-ok-btn').removeEventListener('click', onOk);
+      document.getElementById('confirm-cancel-btn').removeEventListener('click', onCancel);
+    }
+    document.getElementById('confirm-ok-btn').addEventListener('click', onOk);
+    document.getElementById('confirm-cancel-btn').addEventListener('click', onCancel);
+  });
 }
 
 // ── PARTICLES ──
@@ -2374,7 +2433,17 @@ function pandaOfficerSVG(size=72) {
 }
 
 // ── WELCOME PAGE ──
-function enterRestaurant() {
+async function enterRestaurant() {
+  // 在使用者點擊的當下解鎖瀏覽器音訊系統（iOS/Android 必須在 user gesture 中呼叫）
+  // 解鎖完成後，系統裡所有音效（代幣音、購買音、哨子音等）才能在行動裝置上正常播放
+  try { await Tone.start(); } catch(e) {}
+
+  // 輕快歡迎進場音：三個音符往上走，最後一個長一點，營造歡迎感
+  playPluck('C5', '0.08', 'triangle');
+  setTimeout(() => playPluck('E5', '0.08', 'triangle'), 100);
+  setTimeout(() => playPluck('G5', '0.08', 'triangle'), 200);
+  setTimeout(() => playPluck('C6', '0.18', 'triangle'), 330);
+
   const wp = document.getElementById('welcome-page');
   wp.classList.add('fade-out');
   setTimeout(() => { wp.style.display = 'none'; }, 650);
