@@ -1629,7 +1629,7 @@ async function manualRefreshMama() {
 }
 
 async function loadMamaAll() {
-  if (!Object.keys(allData).length) await loadAll();
+  await loadAll(); // 每次進入媽媽後台都強制重新載入，確保 penaltyList 等資料是最新的
   loadMamaTab(currentMamaTab);
 }
 
@@ -2020,7 +2020,14 @@ async function adjustCoins(childId, sign) {
 // ── 熊貓教官處罰區：媽媽端 ──
 // 渲染快速處罰按鈕（固定清單，每項各配「扣蔓蔓」「扣昊昊」雙按鈕）+ 下方清單管理區
 function renderPenaltyEditor() {
-  const list = allData.candice?.penaltyList || [];
+  // penaltyList 從 candice 或 harris 任一份資料取得（兩份都一樣，取第一個有資料的）
+  const list = allData.candice?.penaltyList || allData.harris?.penaltyList || [];
+
+  // 如果資料還沒載入完成，顯示載入中並重試
+  if (!allData.candice && !allData.harris) {
+    loadAll().then(() => renderPenaltyEditor());
+    return;
+  }
 
   // 上半部：每個違規項目各配兩顆獨立扣款按鈕
   const quickEl = document.getElementById('penalty-quick-list');
