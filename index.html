@@ -902,6 +902,23 @@ body {
       <div style="padding:0 12px;">
         <div style="font-size:12px;color:var(--cocoa-soft);margin-top:4px;font-weight:600;">💡 輸入數量後點＋給或－扣，會即時更新 Google Sheets</div>
       </div>
+      <!-- 利率設定 -->
+      <div style="padding:12px 12px 0;">
+        <div class="sheet-title" style="margin-bottom:8px;">🏦 森林銀行利率設定</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="font-size:13px;font-weight:700;">每週利率：</div>
+          <input type="number" id="interest-rate-input" min="0" max="100" step="0.1"
+            style="width:80px;padding:8px;border:2px solid var(--cocoa);border-radius:8px;font-family:inherit;font-size:13px;font-weight:700;text-align:center;"
+            placeholder="2">
+          <div style="font-size:13px;font-weight:700;">%</div>
+          <button onclick="saveInterestRate()"
+            style="background:var(--mango);border:2px solid var(--cocoa);border-radius:10px;padding:8px 16px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;box-shadow:2px 2px 0 var(--cocoa);">
+            💾 儲存
+          </button>
+          <span id="interest-rate-msg" style="font-size:12px;color:var(--cocoa-soft);"></span>
+        </div>
+        <div style="font-size:11px;color:var(--cocoa-soft);margin-top:6px;">目前設定：<span id="interest-rate-current">載入中…</span>　每週一凌晨自動發放</div>
+      </div>
     </div>
 
     <!-- TAB: MENU EDIT -->
@@ -1031,7 +1048,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbzNECnKwLsGh5VnF_kKUvnWL6W2lluskJEgZhmgw4aeQ9pXbCWB2eHGaOpaBLaY9ZEH/exec";
+const API = "https://script.google.com/macros/s/AKfycby2-dVX_Xne3jK7lWEFLH_9fRfWpZnS-DAbQzmJbmB1BRZhzJ6I39E7APLZ-U-VeakL/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -1441,7 +1458,14 @@ function renderPenaltyList(data) {
   // 取得「今天」的台灣日期字串 yyyy-MM-dd，跟 created_at 的日期部分比對
   // （created_at 格式固定是 twNow() 產生的 "yyyy/MM/dd HH:mm"，故取前10碼並統一分隔符號比較）
   const todayStr = getTaipeiTodayStr();
-  const todayPenalties = allPenalties.filter(p => extractDateStr(p.created_at) === todayStr);
+  // 顯示最近 3 天的違規紀錄，避免午夜剛過就看不到昨天的紀錄
+  const threeDaysAgoMs = new Date().getTime() - 3 * 24 * 60 * 60 * 1000;
+  const todayPenalties = allPenalties.filter(p => {
+    const dateStr = extractDateStr(p.created_at);
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return !isNaN(d.getTime()) && d.getTime() >= threeDaysAgoMs;
+  });
 
   // 只要今天有違規紀錄，每次進入/刷新此分頁都播放哨子提示音
   if (todayPenalties.length > 0) {
@@ -1462,11 +1486,11 @@ function renderPenaltyList(data) {
   speechEl.innerHTML = rb(pandaLine);
 
   if (todayPenalties.length === 0) {
-    container.innerHTML = `<div class="empty">${m.avatar} ${m.name} 今天目前沒有違規紀錄</div>`;
+    container.innerHTML = `<div class="empty">${m.avatar} ${m.name} 最近 3 天沒有違規紀錄</div>`;
     return;
   }
 
-  let html = `<div style="padding:10px 12px 0; font-size:13px; font-weight:700; color:var(--cocoa-soft);">${m.avatar} 顯示 ${m.name} 今天的紀錄</div>`;
+  let html = `<div style="padding:10px 12px 0; font-size:13px; font-weight:700; color:var(--cocoa-soft);">${m.avatar} 顯示 ${m.name} 最近 3 天的紀錄</div>`;
   html += todayPenalties.slice().reverse().map(p => `
     <div class="order-history-item">
       <div class="order-dot rejected"></div>
@@ -1482,11 +1506,15 @@ function renderPenaltyList(data) {
 
 // 取得「今天」的台灣日期字串 yyyy-MM-dd，明確用台灣時區，不依賴瀏覽器當地時區
 function getTaipeiTodayStr() {
-  const now = new Date();
-  const taipeiMs = now.getTime() + (8 * 60 - now.getTimezoneOffset()) * 60000;
-  const d = new Date(taipeiMs);
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  // 用 Intl.DateTimeFormat 直接取台灣時區的今日日期，不做手動時差計算
+  const parts = new Intl.DateTimeFormat('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const y = parts.find(p => p.type==='year').value;
+  const mo = parts.find(p => p.type==='month').value;
+  const d = parts.find(p => p.type==='day').value;
+  return `${y}-${mo}-${d}`;
 }
 
 // 從 created_at 字串（格式如 "2026/06/21 14:30"）取出日期部分，統一成 yyyy-MM-dd 以便比較
@@ -1804,7 +1832,7 @@ function loadMamaTab(tab) {
   if (!allData.candice) { loadAll().then(() => loadMamaTab(tab)); return; }
   if (tab === 'approve')      renderApprove();
   if (tab === 'orders')       renderMamaOrders();
-  if (tab === 'coins')        renderCoins();
+  if (tab === 'coins') { renderCoins(); loadInterestRate(); }
   if (tab === 'menu-edit')    renderMenuEditor();
   if (tab === 'chore-edit')   renderChoreEditor();
   if (tab === 'penalty-edit') renderPenaltyEditor();
@@ -2189,6 +2217,47 @@ function closeWeeklyReview() {
 }
 
 // ══════════════════════════════════════════════════════════════
+
+// ── 利率設定 ──
+async function loadInterestRate() {
+  try {
+    const res = await fetch(API + '?action=getSetting&key=interest_rate');
+    const data = await res.json();
+    const rate = parseFloat(data.value || 0.02) * 100;
+    const el = document.getElementById('interest-rate-input');
+    const cur = document.getElementById('interest-rate-current');
+    if (el) el.value = rate.toFixed(1);
+    if (cur) cur.textContent = rate.toFixed(1) + '%';
+  } catch(e) {
+    const cur = document.getElementById('interest-rate-current');
+    if (cur) cur.textContent = '讀取失敗';
+  }
+}
+
+async function saveInterestRate() {
+  const el = document.getElementById('interest-rate-input');
+  const msg = document.getElementById('interest-rate-msg');
+  const cur = document.getElementById('interest-rate-current');
+  const pct = parseFloat(el?.value);
+  if (isNaN(pct) || pct < 0 || pct > 100) {
+    if (msg) { msg.textContent = '❌ 請輸入 0～100 的數字'; msg.style.color = '#e6483c'; }
+    return;
+  }
+  const rate = (pct / 100).toFixed(4);
+  try {
+    const res = await fetch(`${API}?action=saveSetting&key=interest_rate&value=${rate}`);
+    const data = await res.json();
+    if (data.success) {
+      if (msg) { msg.textContent = '✅ 已儲存！'; msg.style.color = '#52c49a'; }
+      if (cur) cur.textContent = pct.toFixed(1) + '%';
+      setTimeout(() => { if (msg) msg.textContent = ''; }, 3000);
+    } else {
+      if (msg) { msg.textContent = '❌ 儲存失敗'; msg.style.color = '#e6483c'; }
+    }
+  } catch(e) {
+    if (msg) { msg.textContent = '❌ 網路錯誤'; msg.style.color = '#e6483c'; }
+  }
+}
 
 // ── RENDER MENU EDITOR ──
 function renderMenuEditor() {
