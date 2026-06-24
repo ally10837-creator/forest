@@ -1031,7 +1031,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbxXMGf59yVKcVOBKt5BeV1c0oZM9w7ncFJ6CVwW8FfyG6GM9e_-eEQUoMldqffLU0q-/exec";
+const API = "https://script.google.com/macros/s/AKfycbxqQaP32hhmm3Bl_y3wZM1KEKorjzC8a0lWFRlU-eZPikeLwkV0hz11tEdU8bjVaadN/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -1468,7 +1468,7 @@ function getTaipeiTodayStr() {
 // 從 created_at 字串（格式如 "2026/06/21 14:30"）取出日期部分，統一成 yyyy-MM-dd 以便比較
 function extractDateStr(createdAt) {
   if (!createdAt) return '';
-  const m = String(createdAt).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  const m = String(createdAt).match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
   if (!m) return '';
   const pad = n => String(n).padStart(2, '0');
   return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
