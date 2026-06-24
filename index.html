@@ -1715,7 +1715,10 @@ function removeFromCart(idx) {
   else openCart();
 }
 
+let processingOrder = false;
+
 async function submitOrder() {
+  if (processingOrder) return;
   const cart = getCart();
   const balance = allData[currentChild]?.balance || 0;
   const total = cart.reduce((s,c) => s + c.price_coins * c.qty, 0);
@@ -1723,6 +1726,9 @@ async function submitOrder() {
     showFundsModal(total, balance);
     return;
   }
+  processingOrder = true;
+  const submitBtn = document.getElementById('submit-order-btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.style.opacity = '0.5'; }
   const m = MEMBERS[currentChild];
   closeCart();
   showToast(`📨 ${m.name} 的訂單送出中...`, '');
@@ -1733,10 +1739,12 @@ async function submitOrder() {
   }
   setCart([]);
   updateCartFab();
-  closeCart(); // 保險：確保非同步流程跑完後 modal 狀態仍正確關閉
+  closeCart();
   showToast(`🎉 ${m.name} 的訂單送出！等媽媽確認喔～`, 'success');
   playBuy();
   setTimeout(() => loadAll(), 2000);
+  processingOrder = false;
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.style.opacity = '1'; }
 }
 
 // ── DECLARE CHORE ──
