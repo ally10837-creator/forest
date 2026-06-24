@@ -1048,7 +1048,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbyjfW6kfL0n5KAvcFXHpw2EROq6W_w6dz4RJOECYpcFPT64iSVJBoMCD5Zhve64LIxp/exec";
+const API = "https://script.google.com/macros/s/AKfycby2-dVX_Xne3jK7lWEFLH_9fRfWpZnS-DAbQzmJbmB1BRZhzJ6I39E7APLZ-U-VeakL/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -1071,17 +1071,25 @@ function rb(text) {
     '銀行': ['ㄧㄣˊ','ㄏㄤˊ'],
   };
   let s = String(text);
-  // 多音字直接替換，不用佔位符
+  // 用佔位符保護多音字，避免後續單字替換重複處理
+  const slots = [];
   Object.entries(MULTI).forEach(([word, readings]) => {
-    const html = word.split('').map((ch, i) =>
+    const rubyHtml = word.split('').map((ch, i) =>
       '<span class="bpm"><sup>' + readings[i] + '</sup><span class="bpm-char">' + ch + '</span></span>'
     ).join('');
-    while (s.includes(word)) s = s.replace(word, html);
+    while (s.includes(word)) {
+      const idx = slots.length;
+      slots.push(rubyHtml);
+      s = s.replace(word, '@@' + idx + '@@');
+    }
   });
+  // 處理一般單字
   s = s.replace(/[一-鿿]/g, ch => {
     const rt = BOPO[ch] || '';
     return '<span class="bpm"><sup>' + rt + '</sup><span class="bpm-char">' + ch + '</span></span>';
   });
+  // 還原多音字佔位符
+  slots.forEach((rubyHtml, i) => { s = s.split('@@' + i + '@@').join(rubyHtml); });
   return s;
 }
 // ═════════════════════════════
