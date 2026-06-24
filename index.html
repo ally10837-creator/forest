@@ -1031,7 +1031,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbypPV9miHvoEWCiPFer_lHPAuBrC3dHkJpILFzWY6pP31v44Kpr9hJyYNfOrpnuo86R/exec";
+const API = "https://script.google.com/macros/s/AKfycbzVK8yX0nq6Ztir3b-Fjf4tAq3laPNS0kCGPeDEzUSHZYMAvZs93qRMHLrlBkolSAIM/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -1048,10 +1048,29 @@ const BOPO = {"一":"ㄧ","乙":"ㄧˇ","二":"ㄦˋ","人":"ㄖㄣˊ","入":"�
 // Non-CJK chars (letters, numbers, punctuation, emoji) pass through unchanged.
 function rb(text) {
   if (!text) return String(text ?? '');
-  return String(text).replace(/[\u4e00-\u9fff]/g, ch => {
-    const rt = BOPO[ch] || '';
-    return `<span class="bpm"><sup>${rt}</sup><span class="bpm-char">${ch}</span></span>`;
+  // 多音字預處理：行長/銀行的「行」讀 ㄏㄤˊ，先替換避免被字典誤讀成 ㄒㄧㄥˊ
+  const MULTI = {
+    '行長': ['ㄏㄤˊ','ㄓㄤˇ'],
+    '銀行': ['ㄧㄣˊ','ㄏㄤˊ'],
+  };
+  let s = String(text);
+  const placeholders = [];
+  Object.entries(MULTI).forEach(([word, readings]) => {
+    s = s.replace(new RegExp(word, 'g'), () => {
+      const html = word.split('').map((ch, i) =>
+        '<span class="bpm"><sup>' + readings[i] + '</sup><span class="bpm-char">' + ch + '</span></span>'
+      ).join('');
+      const key = '\x00' + placeholders.length + '\x00';
+      placeholders.push(html);
+      return key;
+    });
   });
+  s = s.replace(/[\u4e00-\u9fff]/g, ch => {
+    const rt = BOPO[ch] || '';
+    return '<span class="bpm"><sup>' + rt + '</sup><span class="bpm-char">' + ch + '</span></span>';
+  });
+  placeholders.forEach((html, i) => { s = s.split('\x00' + i + '\x00').join(html); });
+  return s;
 }
 // ═════════════════════════════
 
