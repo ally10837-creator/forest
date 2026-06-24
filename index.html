@@ -1031,7 +1031,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycbzVK8yX0nq6Ztir3b-Fjf4tAq3laPNS0kCGPeDEzUSHZYMAvZs93qRMHLrlBkolSAIM/exec";
+const API = "https://script.google.com/macros/s/AKfycbzNECnKwLsGh5VnF_kKUvnWL6W2lluskJEgZhmgw4aeQ9pXbCWB2eHGaOpaBLaY9ZEH/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 
 // ── GOLD COIN SVG helper ──
@@ -1054,22 +1054,17 @@ function rb(text) {
     '銀行': ['ㄧㄣˊ','ㄏㄤˊ'],
   };
   let s = String(text);
-  const placeholders = [];
+  // 多音字直接替換，不用佔位符
   Object.entries(MULTI).forEach(([word, readings]) => {
-    s = s.replace(new RegExp(word, 'g'), () => {
-      const html = word.split('').map((ch, i) =>
-        '<span class="bpm"><sup>' + readings[i] + '</sup><span class="bpm-char">' + ch + '</span></span>'
-      ).join('');
-      const key = '\x00' + placeholders.length + '\x00';
-      placeholders.push(html);
-      return key;
-    });
+    const html = word.split('').map((ch, i) =>
+      '<span class="bpm"><sup>' + readings[i] + '</sup><span class="bpm-char">' + ch + '</span></span>'
+    ).join('');
+    while (s.includes(word)) s = s.replace(word, html);
   });
-  s = s.replace(/[\u4e00-\u9fff]/g, ch => {
+  s = s.replace(/[一-鿿]/g, ch => {
     const rt = BOPO[ch] || '';
     return '<span class="bpm"><sup>' + rt + '</sup><span class="bpm-char">' + ch + '</span></span>';
   });
-  placeholders.forEach((html, i) => { s = s.split('\x00' + i + '\x00').join(html); });
   return s;
 }
 // ═════════════════════════════
@@ -1254,8 +1249,18 @@ async function loadAll() {
       fetch(API + '?user=candice'),
       fetch(API + '?user=harris')
     ]);
-    allData.candice = await cRes.json();
-    allData.harris  = await hRes.json();
+    const cText = await cRes.text();
+    const hText = await hRes.text();
+    try {
+      allData.candice = JSON.parse(cText);
+    } catch(e) {
+      console.error('candice JSON error:', e.message, 'tail:', cText.slice(-300));
+    }
+    try {
+      allData.harris = JSON.parse(hText);
+    } catch(e) {
+      console.error('harris JSON error:', e.message);
+    }
     localChoreStatus = {}; // 兩個孩子的最新資料都拿到了，清空本地暫存，之後畫面完全依賴後端真實資料
     updateBalanceDisplay();
     // 只在孩子端頁面實際顯示中才渲染孩子端分頁，避免媽媽端刷新時意外觸發孩子端畫面更新與音效（例如熊貓教官的哨子聲）
