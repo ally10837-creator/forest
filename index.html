@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 ^^</title>
+<title>🌲 森林餐館 </title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -103,12 +103,13 @@ body {
 }
 .menu-card:active { transform: translate(2px,2px); box-shadow: none; }
 .menu-photo {
-  height: 100px; background: #fff5e6;
+  background: #fff5e6;
   border-bottom: var(--border);
   display:flex; align-items:center; justify-content:center;
   font-size: 52px; overflow: hidden; position: relative;
+  min-height: 80px;
 }
-.menu-photo img { width:100%; height:100%; object-fit:contain; display:block; background:#fff5e6; }
+.menu-photo img { width:100%; height:auto; object-fit:contain; display:block; background:#fff5e6; }
 .stock-badge {
   position:absolute; bottom:6px; left:6px;
   background: var(--cocoa); color:white; font-size:10px; font-weight:700;
@@ -1039,47 +1040,10 @@ body {
             1. 複製上方英文 Prompt<br>
             2. 打開 <b>Gemini</b>（gemini.google.com）生圖<br>
             3. 下載圖片 → 上傳到 <b>Google Drive</b><br>
-            4. 在 Drive 右鍵 → 共用 → 知道連結的人可查看<br>
-            5. 把 Drive 連結貼到下方「📁 Drive 連結轉換器」→ 一鍵存入！
+            4. 右鍵 → 共用 → 「知道連結的人可查看」→ 複製連結<br>
+            5. 直接把 Drive 連結貼入 Sheets 的 <b>food_photo</b> 欄 ✅<br>
+            <span style="color:var(--mint);font-weight:700;">（系統會自動轉換格式，不用手動處理！）</span>
           </div>
-        </div>
-
-        <!-- ── Drive 連結轉換器 ── -->
-        <div style="margin:0 12px 16px;background:#fff8f0;border:2px solid var(--cocoa);border-radius:12px;padding:14px;">
-          <div style="font-size:13px;font-weight:800;color:var(--cocoa);margin-bottom:10px;">📁 Google Drive 連結轉換器</div>
-          <div style="font-size:11px;color:var(--cocoa-soft);margin-bottom:8px;">貼上 Google Drive 分享連結，自動轉換並存入 Sheets！</div>
-
-          <!-- food_id 選擇 -->
-          <div style="margin-bottom:8px;">
-            <div style="font-size:12px;font-weight:700;color:var(--cocoa);margin-bottom:4px;">要更新哪個品項？</div>
-            <select id="drive-food-select"
-              style="width:100%;padding:8px 10px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:13px;background:white;box-sizing:border-box;">
-              <option value="">── 請選擇品項 ──</option>
-            </select>
-          </div>
-
-          <!-- Drive 連結輸入 -->
-          <div style="margin-bottom:8px;">
-            <div style="font-size:12px;font-weight:700;color:var(--cocoa);margin-bottom:4px;">貼上 Google Drive 分享連結：</div>
-            <input type="text" id="drive-link-input" placeholder="https://drive.google.com/file/d/xxxxx/view"
-              style="width:100%;padding:8px 10px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:12px;box-sizing:border-box;">
-          </div>
-
-          <!-- 轉換後網址預覽 -->
-          <div id="drive-converted-url" style="display:none;margin-bottom:8px;padding:8px;background:#f0fff8;border-radius:8px;border:1px solid var(--mint);font-size:11px;word-break:break-all;color:#333;"></div>
-
-          <!-- 按鈕 -->
-          <div style="display:flex;gap:8px;">
-            <button onclick="convertDriveLink()"
-              style="flex:1;background:var(--sky);color:white;border:2px solid var(--cocoa);border-radius:10px;padding:8px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;">
-              🔄 轉換連結
-            </button>
-            <button onclick="saveDriveToSheet()"
-              style="flex:1;background:var(--mango);color:var(--cocoa);border:2px solid var(--cocoa);border-radius:10px;padding:8px;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer;box-shadow:2px 2px 0 var(--cocoa);">
-              💾 存入 Sheets
-            </button>
-          </div>
-          <div id="drive-status" style="margin-top:8px;font-size:12px;font-weight:700;text-align:center;display:none;"></div>
         </div>
 
         <!-- 狀態訊息 -->
@@ -1654,8 +1618,14 @@ function renderMenu(data) {
     return;
   }
   grid.innerHTML = items.map(m => {
-    const photoHtml = m.food_photo
-      ? `<img src="${m.food_photo}" alt="${m.item_name}" onerror="this.outerHTML='🍱'">`
+    // ★ 自動轉換 Drive 分享連結為可顯示的 thumbnail 格式
+    let photoUrl = m.food_photo || '';
+    if (photoUrl && photoUrl.includes('drive.google.com') && !photoUrl.includes('thumbnail')) {
+      const match = photoUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (match) photoUrl = 'https://drive.google.com/thumbnail?id=' + match[1] + '&sz=w400';
+    }
+    const photoHtml = photoUrl
+      ? `<img src="${photoUrl}" alt="${m.item_name}" onerror="this.outerHTML='🍱'">`
       : '🍱';
     const onSale = m.is_sale_active == 1;
     const priceHtml = onSale
