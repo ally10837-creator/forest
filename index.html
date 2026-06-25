@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 </title>
+<title>🌲 森林餐館 v42</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -103,7 +103,7 @@ body {
 }
 .menu-card:active { transform: translate(2px,2px); box-shadow: none; }
 .menu-photo {
-  width: 72px; height: 72px; flex-shrink: 0;
+  width: 90px; height: 90px; flex-shrink: 0;
   background: #fff5e6; border-radius: 10px;
   border: var(--border);
   display:flex; align-items:center; justify-content:center;
@@ -457,7 +457,28 @@ body {
 
 /* ── RESPONSIVE ── */
 @media(min-width:600px) {
-  .menu-grid { padding: 0 16px 16px; }
+  .menu-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    padding: 0 16px 16px;
+  }
+  .menu-card {
+    flex-direction: column;
+    padding: 0;
+  }
+  .menu-photo {
+    width: 100%; height: auto;
+    aspect-ratio: 1/1;
+    border-radius: 0;
+    border: none;
+    border-bottom: var(--border);
+    font-size: 52px;
+  }
+  .menu-body { padding: 8px 10px; }
+  .menu-name { font-size: 13px; white-space: normal; }
+  .price-tag { font-size: 13px; }
+  .order-btn { font-size: 12px; padding: 5px 10px; }
 }
 
 /* ── MASCOT BANNERS ── */
