@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 </title>
+<title>🌲 森林餐館 v42</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -1025,7 +1025,7 @@ body {
 
           <!-- 英文 Prompt -->
           <div style="background:#fff8f0;border:2px solid var(--cocoa);border-radius:12px;padding:12px;margin-bottom:10px;">
-            <div style="font-size:11px;font-weight:700;color:var(--cocoa-soft);margin-bottom:4px;">英文 Prompt（複製去 Midjourney / Gemini / DALL-E 用）</div>
+            <div style="font-size:11px;font-weight:700;color:var(--cocoa-soft);margin-bottom:4px;">英文 Prompt（複製去 Gemini / Midjourney / DALL-E 用）</div>
             <div id="prompt-en" style="font-size:12px;color:#333;line-height:1.7;font-family:monospace;word-break:break-all;"></div>
             <button onclick="copyPrompt()"
               style="margin-top:8px;background:var(--cocoa);color:white;border:none;border-radius:8px;padding:6px 14px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;">
@@ -1034,14 +1034,52 @@ body {
           </div>
 
           <!-- 使用說明 -->
-          <div style="background:#f5f5f5;border-radius:10px;padding:10px 12px;font-size:11px;color:#666;line-height:1.6;">
+          <div style="background:#f5f5f5;border-radius:10px;padding:10px 12px;font-size:11px;color:#666;line-height:1.6;margin-bottom:10px;">
             💡 <b>怎麼用：</b><br>
             1. 複製上方英文 Prompt<br>
-            2. 打開 <b>Gemini</b>（gemini.google.com）或 <b>Midjourney</b><br>
-            3. 貼上 Prompt 送出，生成圖片<br>
-            4. 下載圖片後，上傳到任何圖床（如 <b>imgur.com</b>）取得連結<br>
-            5. 把連結貼到 Google Sheets 的 <b>food_photo</b> 欄位
+            2. 打開 <b>Gemini</b>（gemini.google.com）生圖<br>
+            3. 下載圖片 → 上傳到 <b>Google Drive</b><br>
+            4. 在 Drive 右鍵 → 共用 → 知道連結的人可查看<br>
+            5. 把 Drive 連結貼到下方「📁 Drive 連結轉換器」→ 一鍵存入！
           </div>
+        </div>
+
+        <!-- ── Drive 連結轉換器 ── -->
+        <div style="margin:0 12px 16px;background:#fff8f0;border:2px solid var(--cocoa);border-radius:12px;padding:14px;">
+          <div style="font-size:13px;font-weight:800;color:var(--cocoa);margin-bottom:10px;">📁 Google Drive 連結轉換器</div>
+          <div style="font-size:11px;color:var(--cocoa-soft);margin-bottom:8px;">貼上 Google Drive 分享連結，自動轉換並存入 Sheets！</div>
+
+          <!-- food_id 選擇 -->
+          <div style="margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:700;color:var(--cocoa);margin-bottom:4px;">要更新哪個品項？</div>
+            <select id="drive-food-select"
+              style="width:100%;padding:8px 10px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:13px;background:white;box-sizing:border-box;">
+              <option value="">── 請選擇品項 ──</option>
+            </select>
+          </div>
+
+          <!-- Drive 連結輸入 -->
+          <div style="margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:700;color:var(--cocoa);margin-bottom:4px;">貼上 Google Drive 分享連結：</div>
+            <input type="text" id="drive-link-input" placeholder="https://drive.google.com/file/d/xxxxx/view"
+              style="width:100%;padding:8px 10px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:12px;box-sizing:border-box;">
+          </div>
+
+          <!-- 轉換後網址預覽 -->
+          <div id="drive-converted-url" style="display:none;margin-bottom:8px;padding:8px;background:#f0fff8;border-radius:8px;border:1px solid var(--mint);font-size:11px;word-break:break-all;color:#333;"></div>
+
+          <!-- 按鈕 -->
+          <div style="display:flex;gap:8px;">
+            <button onclick="convertDriveLink()"
+              style="flex:1;background:var(--sky);color:white;border:2px solid var(--cocoa);border-radius:10px;padding:8px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;">
+              🔄 轉換連結
+            </button>
+            <button onclick="saveDriveToSheet()"
+              style="flex:1;background:var(--mango);color:var(--cocoa);border:2px solid var(--cocoa);border-radius:10px;padding:8px;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer;box-shadow:2px 2px 0 var(--cocoa);">
+              💾 存入 Sheets
+            </button>
+          </div>
+          <div id="drive-status" style="margin-top:8px;font-size:12px;font-weight:700;text-align:center;display:none;"></div>
         </div>
 
         <!-- 狀態訊息 -->
@@ -1377,6 +1415,13 @@ function loadAiFoodList() {
       <div style="font-size:10px;font-weight:700;color:${item.food_photo?'var(--mint)':'#ccc'};">${item.food_photo?'✓ 有圖':'無圖'}</div>
     </div>
   `).join('');
+
+  // 同步更新 Drive 轉換器的下拉選單
+  const sel = document.getElementById('drive-food-select');
+  if (sel) {
+    sel.innerHTML = '<option value="">── 請選擇品項 ──</option>' +
+      menu.map(item => `<option value="${item.food_id}">${item.item_name||item.food_id}</option>`).join('');
+  }
 }
 
 function selectAiFood(foodId, name, el) {
@@ -1433,6 +1478,101 @@ function copyPrompt() {
     document.execCommand('copy');
     document.body.removeChild(ta);
     showToast('✅ Prompt 已複製！');
+  }
+}
+
+// ── Google Drive 連結轉換器 ──
+function extractDriveId(url) {
+  // 支援多種 Drive 連結格式
+  const patterns = [
+    /\/file\/d\/([a-zA-Z0-9_-]+)/,
+    /id=([a-zA-Z0-9_-]+)/,
+    /\/d\/([a-zA-Z0-9_-]+)/
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+function convertDriveLink() {
+  const raw = document.getElementById('drive-link-input').value.trim();
+  const statusEl = document.getElementById('drive-status');
+  const previewEl = document.getElementById('drive-converted-url');
+
+  if (!raw) {
+    statusEl.textContent = '⚠️ 請貼上 Google Drive 連結';
+    statusEl.style.color = 'var(--rose)';
+    statusEl.style.display = 'block';
+    return;
+  }
+
+  const fileId = extractDriveId(raw);
+  if (!fileId) {
+    statusEl.textContent = '❌ 無法解析連結，請確認是 Google Drive 分享連結';
+    statusEl.style.color = 'var(--rose)';
+    statusEl.style.display = 'block';
+    previewEl.style.display = 'none';
+    return;
+  }
+
+  const converted = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
+  previewEl.innerHTML = `✅ 轉換成功！<br><b>${converted}</b>`;
+  previewEl.style.display = 'block';
+  previewEl.dataset.url = converted;
+
+  statusEl.textContent = '✅ 連結轉換完成！請確認品項後點「存入 Sheets」';
+  statusEl.style.color = 'var(--mint)';
+  statusEl.style.display = 'block';
+}
+
+async function saveDriveToSheet() {
+  const foodId = document.getElementById('drive-food-select').value;
+  const previewEl = document.getElementById('drive-converted-url');
+  const statusEl = document.getElementById('drive-status');
+  const photoUrl = previewEl.dataset.url;
+
+  if (!foodId) {
+    statusEl.textContent = '⚠️ 請先選擇要更新的品項';
+    statusEl.style.color = 'var(--rose)';
+    statusEl.style.display = 'block';
+    return;
+  }
+  if (!photoUrl) {
+    statusEl.textContent = '⚠️ 請先點「🔄 轉換連結」';
+    statusEl.style.color = 'var(--rose)';
+    statusEl.style.display = 'block';
+    return;
+  }
+
+  statusEl.textContent = '⬆️ 更新中…';
+  statusEl.style.color = 'var(--cocoa-soft)';
+  statusEl.style.display = 'block';
+
+  try {
+    const url = API + '?action=updateFoodPhoto&food_id=' + encodeURIComponent(foodId)
+              + '&photo_url=' + encodeURIComponent(photoUrl);
+    const resp = await fetch(url);
+    const data = await resp.json().catch(() => ({}));
+
+    if (data.status === 'ok') {
+      statusEl.textContent = '✅ 已成功更新圖片連結！';
+      statusEl.style.color = 'var(--mint)';
+      showToast('✅ 圖片連結已更新！');
+      await loadAll();
+      loadAiFoodList();
+      // 清空輸入
+      document.getElementById('drive-link-input').value = '';
+      previewEl.style.display = 'none';
+      previewEl.dataset.url = '';
+    } else {
+      statusEl.textContent = '❌ 更新失敗：' + (data.message || '請確認 Apps Script 已部署');
+      statusEl.style.color = 'var(--rose)';
+    }
+  } catch(e) {
+    statusEl.textContent = '❌ 錯誤：' + e.message;
+    statusEl.style.color = 'var(--rose)';
   }
 }
 
