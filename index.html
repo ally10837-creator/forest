@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 </title>
+<title>🌲 森林餐館 ^^</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -103,12 +103,12 @@ body {
 }
 .menu-card:active { transform: translate(2px,2px); box-shadow: none; }
 .menu-photo {
-  height: 110px; background: #fff5e6;
+  aspect-ratio: 1 / 1; background: #fff5e6;
   border-bottom: var(--border);
   display:flex; align-items:center; justify-content:center;
   font-size: 52px; overflow: hidden; position: relative;
 }
-.menu-photo img { width:100%; height:110px; object-fit:cover; display:block; }
+.menu-photo img { width:100%; height:100%; object-fit:cover; display:block; background:#fff5e6; }
 .stock-badge {
   position:absolute; bottom:6px; left:6px;
   background: var(--cocoa); color:white; font-size:10px; font-weight:700;
@@ -1459,9 +1459,9 @@ function generatePromptOnly() {
   if (!desc) { showAiStatus('⚠️ 請先選擇品項或輸入食物名稱', 'var(--rose)'); return; }
 
   const styleMap = {
-    cute:       { zh: '可愛Q版卡通插畫，暖棕色系配色（米白、奶茶、蜂蜜黃），圓潤可愛造型，純白背景，無文字，乾淨簡單的食物插畫，適合兒童餐廳菜單風格', en: 'cute chibi cartoon food illustration, warm earthy color palette (cream, caramel, honey yellow, soft brown), round chubby shapes, clean white background, no text, simple clean lines, children menu style, warm and cozy feeling, soft shadows, 1:1 ratio' },
-    watercolor: { zh: '溫暖水彩插畫，奶茶棕色系，柔和筆觸，暖色調，純白背景，手繪童趣食物插畫，無文字', en: 'warm watercolor food illustration, caramel brown and cream color palette, soft gentle brushstrokes, warm tones, white background, hand-painted children book style, no text, cozy and cute, 1:1 ratio' },
-    sticker:    { zh: '可愛貼圖風格，暖棕色系，細黑邊框，溫暖色調，白色背景，扁平設計，童趣食物貼圖，無文字', en: 'cute food sticker illustration, warm brown cream color scheme, thin clean black outline, flat design, white background, cozy children sticker style, no text, simple shapes, warm and friendly, 1:1 ratio' }
+    cute:       { zh: '可愛Q版卡通插畫，暖棕色系配色（米白、奶茶、蜂蜜黃），圓潤可愛造型，純白背景，無文字，1:1正方形構圖', en: 'cute chibi cartoon food illustration, warm earthy color palette (cream, caramel, honey yellow, soft brown), round chubby shapes, clean white background, no text, simple clean lines, children menu style, warm and cozy feeling, soft shadows, square 1:1 composition' },
+    watercolor: { zh: '溫暖水彩插畫，奶茶棕色系，柔和筆觸，暖色調，純白背景，手繪童趣食物插畫，無文字，1:1正方形構圖', en: 'warm watercolor food illustration, caramel brown and cream color palette, soft gentle brushstrokes, warm tones, white background, hand-painted children book style, no text, cozy and cute, square 1:1 composition' },
+    sticker:    { zh: '可愛貼圖風格，暖棕色系，細黑邊框，溫暖色調，白色背景，扁平設計，童趣食物貼圖，無文字，1:1正方形構圖', en: 'cute food sticker illustration, warm brown cream color scheme, thin clean black outline, flat design, white background, cozy children sticker style, no text, simple shapes, warm and friendly, square 1:1 composition' }
   };
 
   const s = styleMap[style] || styleMap.cute;
