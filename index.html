@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 v42</title>
+<title>🌲 森林餐館 </title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -1341,7 +1341,17 @@ function showPage(page) {
   document.getElementById('nav-child').classList.toggle('active', page === 'child');
   document.getElementById('nav-mama').classList.toggle('active',  page === 'mama');
   if (page === 'mama' && mamaUnlocked) loadMamaTab(currentMamaTab);
-  if (page === 'child') updateCartFab();
+  if (page === 'child') {
+    updateCartFab();
+    // ★ 先用現有資料立刻渲染畫面
+    if (allData[currentChild]) renderSubTab(currentSubTab);
+    // ★ 判斷快取是否還新鮮（5分鐘內），新鮮就不重抓
+    const cacheTime = Number(sessionStorage.getItem('menu_cache_time') || 0);
+    const cacheAge  = Date.now() - cacheTime;
+    if (cacheAge > 5 * 60 * 1000) {
+      loadAll(); // 背景靜默更新
+    }
+  }
 }
 
 // ── CHILD SWITCH ──
@@ -1588,6 +1598,11 @@ async function loadAll() {
     const hText = await hRes.text();
     try {
       allData.candice = JSON.parse(cText);
+      // ★ 菜單快取：存到 sessionStorage，下次進入不用重抓
+      if (allData.candice?.menu) {
+        sessionStorage.setItem('menu_cache', JSON.stringify(allData.candice.menu));
+        sessionStorage.setItem('menu_cache_time', Date.now());
+      }
     } catch(e) {
       console.error('candice JSON error:', e.message, 'tail:', cText.slice(-300));
     }
@@ -1596,13 +1611,12 @@ async function loadAll() {
     } catch(e) {
       console.error('harris JSON error:', e.message);
     }
-    localChoreStatus = {}; // 兩個孩子的最新資料都拿到了，清空本地暫存，之後畫面完全依賴後端真實資料
+    localChoreStatus = {};
     updateBalanceDisplay();
-    // 只在孩子端頁面實際顯示中才渲染孩子端分頁，避免媽媽端刷新時意外觸發孩子端畫面更新與音效（例如熊貓教官的哨子聲）
     const childPageActive = document.getElementById('child-page')?.classList.contains('active');
     if (childPageActive) {
       renderSubTab(currentSubTab);
-      checkWeeklyReview(currentChild); // 週日晚間自動彈跳回顧
+      checkWeeklyReview(currentChild);
     }
   } catch(e) {
     showToast('⚠️ 載入失敗，請檢查網路', 'error');
