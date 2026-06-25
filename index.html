@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 v43</title>
+<title>🌲 森林餐館 </title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -1404,9 +1404,9 @@ function generatePromptOnly() {
   if (!desc) { showAiStatus('⚠️ 請先選擇品項或輸入食物名稱', 'var(--rose)'); return; }
 
   const styleMap = {
-    cute:       { zh: '可愛卡通風格，pastel 粉彩色調，圓潤造型，白色背景，貼圖風格插畫', en: 'cute kawaii cartoon illustration, pastel colors, rounded shapes, white background, sticker style, food illustration, soft lighting' },
-    watercolor: { zh: '水彩插畫風格，柔和筆觸，淡雅色調，白色背景，手繪食物插畫',       en: 'watercolor illustration, soft brushstrokes, gentle pastel tones, white background, hand-painted food art, delicate details' },
-    sticker:    { zh: '貼圖風格，粗黑邊框，鮮豔色彩，白色背景，扁平設計，emoji 風格',   en: 'sticker illustration, bold outline, bright vibrant colors, white background, flat design, emoji-like food art, simple shapes' }
+    cute:       { zh: '可愛Q版卡通插畫，暖棕色系配色（米白、奶茶、蜂蜜黃），圓潤可愛造型，純白背景，無文字，乾淨簡單的食物插畫，適合兒童餐廳菜單風格', en: 'cute chibi cartoon food illustration, warm earthy color palette (cream, caramel, honey yellow, soft brown), round chubby shapes, clean white background, no text, simple clean lines, children menu style, warm and cozy feeling, soft shadows, 1:1 ratio' },
+    watercolor: { zh: '溫暖水彩插畫，奶茶棕色系，柔和筆觸，暖色調，純白背景，手繪童趣食物插畫，無文字', en: 'warm watercolor food illustration, caramel brown and cream color palette, soft gentle brushstrokes, warm tones, white background, hand-painted children book style, no text, cozy and cute, 1:1 ratio' },
+    sticker:    { zh: '可愛貼圖風格，暖棕色系，細黑邊框，溫暖色調，白色背景，扁平設計，童趣食物貼圖，無文字', en: 'cute food sticker illustration, warm brown cream color scheme, thin clean black outline, flat design, white background, cozy children sticker style, no text, simple shapes, warm and friendly, 1:1 ratio' }
   };
 
   const s = styleMap[style] || styleMap.cute;
