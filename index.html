@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 </title>
+<title>🌲 森林餐館 v43</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -972,43 +972,25 @@ body {
     <!-- TAB: AI IMAGE GENERATOR -->
     <div class="mama-tab-content" id="mtab-content-ai-image">
       <div class="sheet-section">
-        <div class="sheet-title">🎨 AI 食物圖片生成器（Gemini）</div>
-
-        <!-- API Key 設定 -->
-        <div style="padding:12px;background:#fff8f0;border-radius:12px;margin:10px;border:2px solid #ffe0c0;">
-          <div style="font-size:12px;font-weight:700;color:var(--cocoa-soft);margin-bottom:6px;">🔑 Gemini API Key（只需設定一次，存在本機）</div>
-          <div style="display:flex;gap:8px;">
-            <input type="password" id="gemini-api-key" placeholder="貼上你的 Gemini API Key"
-              style="flex:1;padding:8px 12px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:13px;">
-            <button onclick="saveGeminiKey()"
-              style="background:var(--cocoa);color:white;border:none;border-radius:10px;padding:8px 14px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;">
-              💾 儲存
-            </button>
-          </div>
-          <div id="gemini-key-status" style="font-size:11px;color:var(--mint);margin-top:4px;font-weight:700;"></div>
-        </div>
+        <div class="sheet-title">🎨 食物圖片 Prompt 產生器</div>
 
         <!-- 食物選擇器 -->
-        <div style="padding:0 12px 10px;">
-          <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:8px;">🍱 選擇要產生圖片的菜單品項：</div>
-          <div id="ai-food-list" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;">
+        <div style="padding:10px 12px 8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:8px;">🍱 選擇菜單品項：</div>
+          <div id="ai-food-list" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;">
             <div style="color:var(--cocoa-soft);font-size:13px;padding:10px;">載入中…</div>
           </div>
         </div>
 
         <!-- 自訂描述 -->
-        <div style="padding:0 12px 10px;">
-          <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:6px;">✏️ 描述（點選品項後自動帶入，可手動修改）：</div>
-          <div style="display:flex;gap:8px;">
-            <input type="text" id="ai-custom-desc" placeholder="例如：愛心蛋餅、可愛卡通風格"
-              style="flex:1;padding:8px 12px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:13px;">
-            <input type="text" id="ai-custom-foodid" placeholder="food_id"
-              style="width:90px;padding:8px 10px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:13px;">
-          </div>
+        <div style="padding:0 12px 8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:6px;">✏️ 食物名稱（點選後自動帶入）：</div>
+          <input type="text" id="ai-custom-desc" placeholder="例如：愛心蛋餅"
+            style="width:100%;padding:8px 12px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:13px;box-sizing:border-box;">
         </div>
 
         <!-- 風格選擇 -->
-        <div style="padding:0 12px 10px;">
+        <div style="padding:0 12px 8px;">
           <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:6px;">🎭 圖片風格：</div>
           <div style="display:flex;flex-wrap:wrap;gap:10px;">
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;font-weight:700;">
@@ -1025,29 +1007,45 @@ body {
 
         <!-- 產生按鈕 -->
         <div style="padding:0 12px 12px;">
-          <button onclick="generateFoodImage()"
+          <button onclick="generatePromptOnly()"
             style="width:100%;background:var(--mint);color:white;border:2px solid var(--cocoa);border-radius:12px;padding:12px;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;box-shadow:3px 3px 0 var(--cocoa);">
-            ✨ 產生 AI 圖片！
+            ✨ 產生圖片 Prompt！
           </button>
+        </div>
+
+        <!-- Prompt 輸出區 -->
+        <div id="ai-prompt-result" style="display:none;padding:0 12px 16px;">
+          <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:8px;">📋 產生的 Prompt：</div>
+
+          <!-- 中文說明 -->
+          <div style="background:#f0fff8;border:2px solid var(--mint);border-radius:12px;padding:12px;margin-bottom:10px;">
+            <div style="font-size:11px;font-weight:700;color:var(--mint);margin-bottom:4px;">中文說明（給自己看的）</div>
+            <div id="prompt-zh" style="font-size:13px;color:var(--cocoa);line-height:1.6;"></div>
+          </div>
+
+          <!-- 英文 Prompt -->
+          <div style="background:#fff8f0;border:2px solid var(--cocoa);border-radius:12px;padding:12px;margin-bottom:10px;">
+            <div style="font-size:11px;font-weight:700;color:var(--cocoa-soft);margin-bottom:4px;">英文 Prompt（複製去 Midjourney / Gemini / DALL-E 用）</div>
+            <div id="prompt-en" style="font-size:12px;color:#333;line-height:1.7;font-family:monospace;word-break:break-all;"></div>
+            <button onclick="copyPrompt()"
+              style="margin-top:8px;background:var(--cocoa);color:white;border:none;border-radius:8px;padding:6px 14px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;">
+              📋 複製 Prompt
+            </button>
+          </div>
+
+          <!-- 使用說明 -->
+          <div style="background:#f5f5f5;border-radius:10px;padding:10px 12px;font-size:11px;color:#666;line-height:1.6;">
+            💡 <b>怎麼用：</b><br>
+            1. 複製上方英文 Prompt<br>
+            2. 打開 <b>Gemini</b>（gemini.google.com）或 <b>Midjourney</b><br>
+            3. 貼上 Prompt 送出，生成圖片<br>
+            4. 下載圖片後，上傳到任何圖床（如 <b>imgur.com</b>）取得連結<br>
+            5. 把連結貼到 Google Sheets 的 <b>food_photo</b> 欄位
+          </div>
         </div>
 
         <!-- 狀態訊息 -->
         <div id="ai-status" style="padding:0 12px 8px;font-size:13px;font-weight:700;color:var(--cocoa-soft);text-align:center;display:none;"></div>
-
-        <!-- 預覽區 -->
-        <div id="ai-preview-area" style="padding:0 12px 16px;display:none;">
-          <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:8px;">👀 預覽：</div>
-          <div style="background:white;border:2px solid var(--cocoa);border-radius:12px;padding:12px;text-align:center;">
-            <img id="ai-preview-img" style="max-width:200px;max-height:200px;border-radius:10px;border:2px solid #eee;" src="" alt="AI生成圖片">
-            <div id="ai-preview-name" style="font-size:13px;font-weight:700;color:var(--cocoa);margin-top:8px;"></div>
-            <div style="display:flex;gap:8px;margin-top:10px;justify-content:center;flex-wrap:wrap;">
-              <button onclick="saveToSheet()"
-                style="background:var(--mango);border:2px solid var(--cocoa);border-radius:10px;padding:10px 18px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:2px 2px 0 var(--cocoa);">
-                💾 存入 Sheets
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -1352,29 +1350,10 @@ async function manualRefreshChild() {
 
 // ── DATA LOAD ──
 // ══════════════════════════════════════════════
-// 🎨 AI 圖片生成器（Gemini）
+// 🎨 食物圖片 Prompt 產生器（免費，不需 API Key）
 // ══════════════════════════════════════════════
 
-function saveGeminiKey() {
-  const key = document.getElementById('gemini-api-key').value.trim();
-  if (!key) { showAiStatus('⚠️ 請輸入 API Key', 'var(--rose)'); return; }
-  localStorage.setItem('gemini_api_key', key);
-  document.getElementById('gemini-key-status').textContent = '✅ 已儲存！';
-  document.getElementById('gemini-api-key').value = '';
-  setTimeout(() => { document.getElementById('gemini-key-status').textContent = loadGeminiKeyStatus(true); }, 2000);
-}
-
-function loadGeminiKeyStatus(returnOnly) {
-  const key = localStorage.getItem('gemini_api_key');
-  const statusEl = document.getElementById('gemini-key-status');
-  const inputEl  = document.getElementById('gemini-api-key');
-  const msg = key
-    ? '✅ 已設定（' + key.substring(0, 6) + '…' + key.slice(-4) + '）'
-    : '⚠️ 尚未設定 API Key';
-  if (returnOnly) return msg;
-  if (statusEl) { statusEl.textContent = msg; statusEl.style.color = key ? 'var(--mint)' : 'var(--rose)'; }
-  if (inputEl)  { inputEl.placeholder = key ? '已設定，如需更換請重新貼上' : '貼上你的 Gemini API Key'; }
-}
+function loadGeminiKeyStatus() {} // 保留空函數避免 loadMamaTab 呼叫出錯
 
 function loadAiFoodList() {
   const container = document.getElementById('ai-food-list');
@@ -1407,16 +1386,7 @@ function selectAiFood(foodId, name, el) {
   });
   el.style.borderColor = 'var(--mint)';
   el.style.background  = '#f0fff8';
-  document.getElementById('ai-custom-desc').value   = name;
-  document.getElementById('ai-custom-foodid').value = foodId;
-}
-
-function getStylePrompt(style) {
-  return {
-    cute:       'cute kawaii cartoon illustration, pastel colors, rounded shapes, white background, food sticker style',
-    watercolor: 'soft watercolor illustration, pastel tones, white background, hand-painted food art, gentle brushstrokes',
-    sticker:    'sticker illustration, bold outline, bright colors, white background, flat design, emoji-like food art'
-  }[style] || 'cute kawaii cartoon illustration, pastel colors, white background';
+  document.getElementById('ai-custom-desc').value = name;
 }
 
 function showAiStatus(msg, color) {
@@ -1427,92 +1397,42 @@ function showAiStatus(msg, color) {
   el.style.display = 'block';
 }
 
-async function generateFoodImage() {
-  const apiKey = localStorage.getItem('gemini_api_key');
-  if (!apiKey) { showAiStatus('⚠️ 請先設定 Gemini API Key！', 'var(--rose)'); return; }
+function generatePromptOnly() {
+  const desc  = document.getElementById('ai-custom-desc').value.trim();
+  const style = document.querySelector('input[name="ai-style"]:checked').value;
 
-  const desc   = document.getElementById('ai-custom-desc').value.trim();
-  const foodId = document.getElementById('ai-custom-foodid').value.trim();
-  const style  = document.querySelector('input[name="ai-style"]:checked').value;
+  if (!desc) { showAiStatus('⚠️ 請先選擇品項或輸入食物名稱', 'var(--rose)'); return; }
 
-  if (!desc) { showAiStatus('⚠️ 請選擇品項或輸入描述', 'var(--rose)'); return; }
+  const styleMap = {
+    cute:       { zh: '可愛卡通風格，pastel 粉彩色調，圓潤造型，白色背景，貼圖風格插畫', en: 'cute kawaii cartoon illustration, pastel colors, rounded shapes, white background, sticker style, food illustration, soft lighting' },
+    watercolor: { zh: '水彩插畫風格，柔和筆觸，淡雅色調，白色背景，手繪食物插畫',       en: 'watercolor illustration, soft brushstrokes, gentle pastel tones, white background, hand-painted food art, delicate details' },
+    sticker:    { zh: '貼圖風格，粗黑邊框，鮮豔色彩，白色背景，扁平設計，emoji 風格',   en: 'sticker illustration, bold outline, bright vibrant colors, white background, flat design, emoji-like food art, simple shapes' }
+  };
 
-  document.getElementById('ai-preview-area').style.display = 'none';
-  showAiStatus('🎨 AI 畫圖中… 約 15-20 秒', 'var(--cocoa-soft)');
+  const s = styleMap[style] || styleMap.cute;
 
-  try {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `${desc}，${getStylePrompt(style)}` }] }],
-          generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
-        })
-      }
-    );
+  const zhText = `食物：${desc}｜風格：${s.zh}`;
+  const enText = `${desc}, ${s.en}, high quality, no text, isolated on white background, 1:1 aspect ratio`;
 
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      showAiStatus('❌ API 錯誤：' + (err.error?.message || resp.statusText), 'var(--rose)');
-      return;
-    }
-
-    const data    = await resp.json();
-    const parts   = data?.candidates?.[0]?.content?.parts || [];
-    const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
-
-    if (!imgPart) { showAiStatus('❌ 沒有收到圖片，請換個描述再試', 'var(--rose)'); return; }
-
-    const mime   = imgPart.inlineData.mimeType;
-    const b64    = imgPart.inlineData.data;
-    const dataUrl = `data:${mime};base64,${b64}`;
-
-    document.getElementById('ai-preview-img').src = dataUrl;
-    document.getElementById('ai-preview-name').textContent = `📌 ${desc}（${foodId||'未選食物ID'}）`;
-
-    const area = document.getElementById('ai-preview-area');
-    area.dataset.foodId = foodId;
-    area.dataset.b64    = b64;
-    area.dataset.mime   = mime;
-    area.style.display  = 'block';
-    document.getElementById('ai-status').style.display = 'none';
-
-  } catch(e) {
-    showAiStatus('❌ 錯誤：' + e.message, 'var(--rose)');
-  }
+  document.getElementById('prompt-zh').textContent = zhText;
+  document.getElementById('prompt-en').textContent  = enText;
+  document.getElementById('ai-prompt-result').style.display = 'block';
+  document.getElementById('ai-status').style.display = 'none';
 }
 
-async function saveToSheet() {
-  const area   = document.getElementById('ai-preview-area');
-  const foodId = area.dataset.foodId;
-  const b64    = area.dataset.b64;
-  const mime   = area.dataset.mime || 'image/png';
-
-  if (!foodId) { showAiStatus('⚠️ 請先選擇品項（food_id 不可空白）', 'var(--rose)'); return; }
-  if (!b64)    { showAiStatus('⚠️ 請先產生圖片', 'var(--rose)'); return; }
-
-  showAiStatus('⬆️ 上傳到 Google Drive 中…', 'var(--cocoa-soft)');
-
-  try {
-    const url  = API + '?action=uploadFoodImage&food_id=' + encodeURIComponent(foodId)
-               + '&mime=' + encodeURIComponent(mime)
-               + '&b64='  + encodeURIComponent(b64);
-    const resp = await fetch(url);
-    const data = await resp.json().catch(() => ({}));
-
-    if (data.status === 'ok' && data.imageUrl) {
-      document.getElementById('ai-preview-img').src = data.imageUrl;
-      showAiStatus('✅ 已存入 Google Drive 並更新 Sheets！', 'var(--mint)');
-      showToast('✅ 圖片已更新！');
-      await loadAll();
-      loadAiFoodList();
-    } else {
-      showAiStatus('❌ 上傳失敗：' + (data.message || '請確認 Apps Script 已部署'), 'var(--rose)');
-    }
-  } catch(e) {
-    showAiStatus('❌ 錯誤：' + e.message, 'var(--rose)');
+function copyPrompt() {
+  const text = document.getElementById('prompt-en').textContent;
+  if (!text) return;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showToast('✅ Prompt 已複製！'));
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('✅ Prompt 已複製！');
   }
 }
 
