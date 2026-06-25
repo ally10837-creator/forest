@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 </title>
+<title>🌲 森林餐館 ^^</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -2077,7 +2077,15 @@ async function submitOrder() {
 
 // ── DECLARE CHORE ──
 async function declareChore(choreId) {
-  const childAtClick = currentChild; // 記住申報當下是哪個孩子，避免過程中使用者切換頭像導致誤判
+  const childAtClick = currentChild;
+  // ★ 立刻找到並禁用該按鈕，防止快速重複點擊
+  const btns = document.querySelectorAll('.declare-btn');
+  btns.forEach(btn => {
+    if (btn.getAttribute('onclick')?.includes(choreId)) {
+      btn.disabled = true;
+      btn.textContent = '⏳ 等審核';
+    }
+  });
   localChoreStatus[choreId + '_' + childAtClick] = 'review';
   renderChores(allData[currentChild]);
   showToast('✋ 已申報！等媽媽審核～', 'warn');
