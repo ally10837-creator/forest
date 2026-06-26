@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 </title>
+<title>🌲 森林餐館 ^^</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -1175,7 +1175,7 @@ body {
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
 <script>
-const API = "https://script.google.com/macros/s/AKfycby2-dVX_Xne3jK7lWEFLH_9fRfWpZnS-DAbQzmJbmB1BRZhzJ6I39E7APLZ-U-VeakL/exec";
+const API = "https://script.google.com/macros/s/AKfycbz605_n8m9J-3Ru7j1NUyY8shDYJW1y_bux5lLfClVgO4OdApHUjBK4TWlDtmjIX7hm/exec";
 const PIN = "5068"; // ← 改成你要的密碼
 const VERSION = "v42"; // ← 程式碼版本
 
@@ -1693,8 +1693,16 @@ function renderMenu(data) {
     grid.innerHTML = '<div class="empty" style="grid-column:1/-1">😢 今天暫時沒有菜單</div>';
     return;
   }
-  grid.innerHTML = items.map(m => {
-    // ★ 自動轉換 Drive 分享連結為可顯示的 thumbnail 格式
+
+  // 分類設定（含注音）
+  const CATEGORIES = [
+    { key: 'breakfast', label: '🌅 美好早晨' },
+    { key: 'meal',      label: '🍱 元氣滿滿正餐' },
+    { key: 'reward',    label: '🎁 獎勵兌換' },
+    { key: '',          label: '🍽️ 其他' },
+  ];
+
+  const renderCard = (m) => {
     let photoUrl = m.food_photo || '';
     if (photoUrl && photoUrl.includes('drive.google.com') && !photoUrl.includes('thumbnail')) {
       const match = photoUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
@@ -1728,7 +1736,24 @@ function renderMenu(data) {
           </div>
         </div>
       </div>`;
-  }).join('');
+  };
+
+  // 依分類分組渲染
+  let html = '';
+  CATEGORIES.forEach(cat => {
+    const catItems = cat.key === ''
+      ? items.filter(m => !['breakfast','meal','reward'].includes(m.category))
+      : items.filter(m => m.category === cat.key);
+    if (catItems.length === 0) return;
+    html += `
+      <div style="grid-column:1/-1;margin-top:14px;margin-bottom:6px;padding:0 2px;">
+        <div style="font-size:15px;font-weight:800;color:var(--cocoa);">${rb(cat.label)}</div>
+        <div style="height:2px;background:#e8d8c8;margin-top:4px;border-radius:2px;"></div>
+      </div>
+      ${catItems.map(renderCard).join('')}
+    `;
+  });
+  grid.innerHTML = html;
 }
 
 // ── RENDER CHORES ──
