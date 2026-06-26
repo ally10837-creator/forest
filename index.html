@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 ^^</title>
+<title>🌲 森林餐館 </title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -1015,11 +1015,25 @@ body {
           </div>
         </div>
 
-        <!-- 自訂描述 -->
+        <!-- 食物名稱 -->
         <div style="padding:0 12px 8px;">
           <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:6px;">✏️ 食物名稱（點選後自動帶入）：</div>
           <input type="text" id="ai-custom-desc" placeholder="例如：愛心蛋餅"
             style="width:100%;padding:8px 12px;border:2px solid var(--cocoa);border-radius:10px;font-family:inherit;font-size:13px;box-sizing:border-box;">
+        </div>
+
+        <!-- 食材（選填） -->
+        <div style="padding:0 12px 8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:6px;">🥚 食材（選填）：</div>
+          <input type="text" id="ai-ingredients" placeholder="例如：蛋、蔥、培根、餅皮"
+            style="width:100%;padding:8px 12px;border:2px solid #e8d8c8;border-radius:10px;font-family:inherit;font-size:13px;box-sizing:border-box;">
+        </div>
+
+        <!-- 料理步驟（選填） -->
+        <div style="padding:0 12px 8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--cocoa);margin-bottom:6px;">👨‍🍳 料理步驟/外觀描述（選填）：</div>
+          <textarea id="ai-steps" placeholder="例如：金黃色蛋餅捲起來，上面有煎過的培根，旁邊有蔥花"
+            style="width:100%;padding:8px 12px;border:2px solid #e8d8c8;border-radius:10px;font-family:inherit;font-size:13px;box-sizing:border-box;resize:vertical;min-height:60px;"></textarea>
         </div>
 
         <!-- 風格選擇 -->
@@ -1030,7 +1044,7 @@ body {
               <input type="radio" name="ai-style" value="cute" checked> 🌸 可愛卡通
             </label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;font-weight:700;">
-              <input type="radio" name="ai-style" value="watercolor"> 🎨 水彩插畫
+              <input type="radio" name="ai-style" value="japanese"> 🍱 日系插畫
             </label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;font-weight:700;">
               <input type="radio" name="ai-style" value="sticker"> ✨ 貼圖風格
@@ -1070,10 +1084,12 @@ body {
           <div style="background:#f5f5f5;border-radius:10px;padding:10px 12px;font-size:11px;color:#666;line-height:1.6;margin-bottom:10px;">
             💡 <b>怎麼用：</b><br>
             1. 複製上方英文 Prompt<br>
-            2. 打開 <b>Gemini</b>（gemini.google.com）生圖<br>
-            3. 下載圖片 → 上傳到 <b>Google Drive</b><br>
-            4. 右鍵 → 共用 → 「知道連結的人可查看」→ 複製連結<br>
-            5. 直接把 Drive 連結貼入 Sheets 的 <b>food_photo</b> 欄 ✅<br>
+            2. 打開 <b>Gemini</b>（gemini.google.com）<br>
+            3. 📷 <b>有食物照片？</b> 把照片和 Prompt 一起貼上，效果更精準！<br>
+            4. 沒有照片就直接貼 Prompt 送出生圖<br>
+            5. 下載圖片 → 上傳到 <b>Google Drive</b><br>
+            6. 右鍵 → 共用 → 「知道連結的人可查看」→ 複製連結<br>
+            7. 直接把 Drive 連結貼入 Sheets 的 <b>food_photo</b> 欄 ✅<br>
             <span style="color:var(--mint);font-weight:700;">（系統會自動轉換格式，不用手動處理！）</span>
           </div>
         </div>
@@ -1448,22 +1464,50 @@ function showAiStatus(msg, color) {
   el.style.display = 'block';
 }
 
+function getStylePrompt(style) {
+  return {
+    cute: {
+      zh: '可愛Q版卡通插畫，食物有可愛表情（圓眼睛、腮紅），自然食物色彩，純白背景，無文字，1:1正方形構圖，食物置中，陰影感',
+      en: 'cute chibi cartoon food illustration, food with kawaii face (dot eyes, rosy cheeks, small smile), natural food colors, pure white background, no text, no transparency, centered food, square 1:1, soft shadow, high quality'
+    },
+    japanese: {
+      zh: '日系卡通食物插畫，粗黑輪廓線，圓潤飽滿造型，依食物自然色彩呈現，白色背景，高光與陰影感，無文字，1:1正方形構圖，食物置中',
+      en: 'Japanese cartoon food illustration, thick bold black outline, round plump shape, natural food colors, white background, glossy highlight and soft shadow, no text, no transparency, centered food, square 1:1, LINE sticker style, high quality'
+    },
+    sticker: {
+      zh: 'LINE貼圖風格食物插畫，粗黑邊框，依食物自然色彩呈現，純白背景，圓潤簡單造型，無文字，1:1正方形構圖，食物置中',
+      en: 'LINE sticker style food illustration, thick bold black outline, natural food colors, pure white background, no transparency, round simple shapes, no text, centered food, square 1:1, kawaii style, high quality'
+    }
+  }[style] || {};
+}
+
+// 照片相關（保留空函數避免舊呼叫報錯）
+let uploadedPhotoAnalysis = '';
+function clearPhoto() {}
+
 function generatePromptOnly() {
-  const desc  = document.getElementById('ai-custom-desc').value.trim();
-  const style = document.querySelector('input[name="ai-style"]:checked').value;
+  const desc        = document.getElementById('ai-custom-desc').value.trim();
+  const ingredients = document.getElementById('ai-ingredients').value.trim();
+  const steps       = document.getElementById('ai-steps').value.trim();
+  const style       = document.querySelector('input[name="ai-style"]:checked').value;
 
   if (!desc) { showAiStatus('⚠️ 請先選擇品項或輸入食物名稱', 'var(--rose)'); return; }
 
-  const styleMap = {
-    cute:       { zh: '日系可愛卡通食物插畫，粗黑邊框，圓潤簡單造型，暖色系配色（米白、奶茶、蜂蜜黃），純白背景，無文字，正方形構圖，食物置中，風格類似 LINE 貼圖角色', en: 'Japanese cute cartoon food illustration, thick black outline, round chubby simple shapes, warm color palette (cream white, caramel, honey yellow, soft brown), pure white background, no text, no transparency, centered food, square 1:1, LINE sticker style, kawaii chibi character design' },
-    watercolor: { zh: '溫暖水彩童書風格食物插畫，暖色系，柔和筆觸，粗黑輪廓線，純白背景，無文字，正方形構圖，食物置中', en: 'warm watercolor children book food illustration, thick black outline, warm earthy tones, soft brushstrokes, pure white background, no text, no transparency, centered food, square 1:1, cute and cozy' },
-    sticker:    { zh: 'LINE貼圖風格食物插畫，粗黑邊框，鮮明暖色系，純白背景，圓潤簡單造型，無文字，正方形構圖，食物置中', en: 'LINE sticker style food illustration, thick bold black outline, bright warm colors, pure white background, no transparency, round simple shapes, no text, centered food, square 1:1, kawaii style' }
-  };
+  const s = getStylePrompt(style);
 
-  const s = styleMap[style] || styleMap.cute;
+  let extraZh = '';
+  let extraEn = '';
+  if (ingredients) {
+    extraZh += `，食材：${ingredients}`;
+    extraEn += `, ingredients: ${ingredients}`;
+  }
+  if (steps) {
+    extraZh += `，外觀描述：${steps}`;
+    extraEn += `, appearance: ${steps}`;
+  }
 
-  const zhText = `食物：${desc}｜風格：${s.zh}`;
-  const enText = `${desc}, ${s.en}, high quality, no text, isolated on white background, 1:1 aspect ratio`;
+  const zhText = `食物：${desc}${extraZh}｜風格：${s.zh}`;
+  const enText = `${desc}${extraEn}, ${s.en}`;
 
   document.getElementById('prompt-zh').textContent = zhText;
   document.getElementById('prompt-en').textContent  = enText;
