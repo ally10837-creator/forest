@@ -3,7 +3,7 @@
 <html lang="zh-TW"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 v42</title>
+<title>🌲 森林餐館 v^^</title>
 <link href="./🌲 森林餐館 v45_files/css2" rel="stylesheet">
 <script src="./🌲 森林餐館 v45_files/Tone.js.下載"></script>
 <style>
@@ -1088,7 +1088,7 @@ body {
   </div>
 
   <!-- Mama Content (after unlock) -->
-  <div class="mama-content show" id="mama-content">
+  <div class="mama-content" id="mama-content">
     <!-- Mama Tabs -->
     <div class="mama-tabs">
       <button class="mama-tab-btn" onclick="switchMamaTab(&#39;coins&#39;)" id="mtab-coins">🪙 代幣</button>
@@ -2533,7 +2533,7 @@ function renderMamaOrders() {
             <div class="review-coin" style="display:flex;align-items:center;gap:3px;">${C(14)} ${o.price_coins}</div>
           </div>
           <div class="review-actions">
-            <button class="rev-btn approve" onclick="approveOrder('${o.id||o.order_id}','${o.childId}','${o.item_name}',${o.price_coins})">✅ 確認出餐</button>
+            <button class="rev-btn approve" onclick="approveOrder('${o.id||o.order_id}','${o.childId}','${o.item_name}',${o.price_coins},this)">✅ 確認出餐</button>
             <button class="rev-btn reject"  onclick="rejectOrder('${o.id||o.order_id}','${o.childId}','${o.item_name}',${o.price_coins})">❌ 取消退幣</button>
           </div>
         </div>`;
@@ -2720,7 +2720,14 @@ function renderBank() {
     const total = d.earn + d.interest + d.spend + d.penalty;
     const h = total > 0 ? Math.max(Math.round((total / maxVal) * 80), 4) : 0;
     const today = new Date(); const isToday = d.date.toDateString() === today.toDateString();
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
+    const tooltipParts = [];
+    if (d.earn)     tooltipParts.push(`賺幣 +${d.earn}`);
+    if (d.interest) tooltipParts.push(`利息 +${d.interest}`);
+    if (d.spend)    tooltipParts.push(`花費 -${d.spend}`);
+    if (d.penalty)  tooltipParts.push(`扣款 -${d.penalty}`);
+    const tooltip = tooltipParts.length ? tooltipParts.join('　') : '無紀錄';
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;" class="bank-bar-col" data-tooltip="${tooltip}">
+      <div class="bank-bar-tooltip" style="display:none;position:absolute;bottom:90px;left:50%;transform:translateX(-50%);background:#3d2b1f;color:white;font-size:11px;font-weight:700;padding:5px 8px;border-radius:8px;white-space:nowrap;z-index:50;pointer-events:none;">${tooltip}</div>
       <div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:80px;">
         ${h > 0 ? `<div style="width:100%;height:${Math.round(d.earn/maxVal*80)}px;background:#52c49a;border-radius:3px 3px 0 0;"></div>
         <div style="width:100%;height:${Math.round(d.interest/maxVal*80)}px;background:#a78bfa;"></div>
@@ -2730,6 +2737,13 @@ function renderBank() {
       <div style="font-size:10px;font-weight:700;color:${isToday?'#e06820':'#999'};">${DAY_LABEL[i]}</div>
     </div>`;
   }).join('');
+  // hover tooltip 事件
+  chartEl.querySelectorAll('.bank-bar-col').forEach(col => {
+    const tip = col.querySelector('.bank-bar-tooltip');
+    col.addEventListener('mouseenter', () => { if(tip) tip.style.display = 'block'; });
+    col.addEventListener('mouseleave', () => { if(tip) tip.style.display = 'none'; });
+    col.addEventListener('touchstart', () => { if(tip) tip.style.display = tip.style.display==='block'?'none':'block'; }, {passive:true});
+  });
   document.getElementById('bank-chart-legend').innerHTML = `
     <span style="display:flex;align-items:center;gap:3px;"><span style="width:10px;height:10px;background:#52c49a;border-radius:2px;display:inline-block;"></span>${rb('賺幣')}</span>
     <span style="display:flex;align-items:center;gap:3px;"><span style="width:10px;height:10px;background:#a78bfa;border-radius:2px;display:inline-block;"></span>${rb('利息')}</span>
@@ -3232,17 +3246,31 @@ async function rejectChore(choreId, childId, taskName) {
   setTimeout(() => { loadAll().then(() => loadMamaTab('approve')); }, 1000);
 }
 
-async function approveOrder(orderId, childId, itemName, coins) {
+const processingOrders = new Set(); // 記錄正在處理中的訂單，避免連點重複
+
+async function approveOrder(orderId, childId, itemName, coins, btnEl) {
+  if (processingOrders.has(orderId)) return;
+  processingOrders.add(orderId);
+  const btn = btnEl || (window.event && window.event.target);
+  if (btn) {
+    const card = btn.closest('.review-card') || btn.parentElement;
+    if (card) card.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; b.style.pointerEvents = 'none'; });
+    btn.textContent = '處理中...';
+  }
   const url = `${API}?action=approvePurchase&orderId=${encodeURIComponent(orderId)}&childId=${childId}`;
   try { await fetch(url); } catch(e) {}
+  finally { processingOrders.delete(orderId); }
   showToast(`✅ 出餐確認！`, 'success');
   setTimeout(() => { loadAll().then(() => loadMamaTab('orders')); }, 1000);
 }
 
 async function rejectOrder(orderId, childId, itemName, coins) {
+  if (processingOrders.has(orderId)) return;
   if (!await showConfirm(`取消「${itemName}」訂單？\n將退還 ${coins} 枚代幣給 ${MEMBERS[childId].name}`)) return;
+  processingOrders.add(orderId);
   const url = `${API}?action=rejectPurchase&orderId=${encodeURIComponent(orderId)}&childId=${childId}`;
   try { await fetch(url); } catch(e) {}
+  finally { processingOrders.delete(orderId); }
   showToast('訂單已取消，代幣退還', 'warn');
   setTimeout(() => { loadAll().then(() => loadMamaTab('orders')); }, 1000);
 }
