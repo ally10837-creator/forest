@@ -1075,9 +1075,9 @@ body {
 <!-- ═══════════════════════════════════════════ -->
 <!--              MAMA PAGE                      -->
 <!-- ═══════════════════════════════════════════ -->
-<div id="mama-page" class="page active">
+<div id="mama-page" class="page">
   <!-- Lock Screen -->
-  <div class="mama-lock" id="mama-lock" style="display: none;">
+  <div class="mama-lock" id="mama-lock">
     <div class="mama-lock-icon">👑</div>
     <div class="mama-lock-title">媽媽管理中心</div>
     <div class="mama-lock-box">
@@ -3771,11 +3771,8 @@ function pandaOfficerSVG(size=72) {
 
 // ── WELCOME PAGE ──
 async function enterRestaurant() {
-  // 在使用者點擊的當下解鎖瀏覽器音訊系統（iOS/Android 必須在 user gesture 中呼叫）
-  // 解鎖完成後，系統裡所有音效（代幣音、購買音、哨子音等）才能在行動裝置上正常播放
   try { await Tone.start(); } catch(e) {}
 
-  // 輕快歡迎進場音：三個音符往上走，最後一個長一點，營造歡迎感
   playPluck('C5', '0.08', 'triangle');
   setTimeout(() => playPluck('E5', '0.08', 'triangle'), 100);
   setTimeout(() => playPluck('G5', '0.08', 'triangle'), 200);
@@ -3783,7 +3780,10 @@ async function enterRestaurant() {
 
   const wp = document.getElementById('welcome-page');
   wp.classList.add('fade-out');
-  setTimeout(() => { wp.style.display = 'none'; }, 650);
+  setTimeout(() => {
+    wp.style.display = 'none';
+    showPage('child');
+  }, 650);
 }
 
 // ── INJECT MASCOTS ──
