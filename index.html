@@ -3,7 +3,7 @@
 <html lang="zh-TW"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 </title>
+<title>🌲 森林餐館 v42</title>
 <link href="./🌲 森林餐館 v45_files/css2" rel="stylesheet">
 <script src="./🌲 森林餐館 v45_files/Tone.js.下載"></script>
 <style>
@@ -3810,6 +3810,16 @@ document.getElementById('wcd-bear').innerHTML     = bearChefIMG(88);
 document.getElementById('wcd-hamster').innerHTML  = hamsterIMG(88);
 document.getElementById('bank-tab-icon').src = IMG_HEDGEHOG;
 loadAll();
+
+// 顯示歡迎頁
+(function() {
+  const wp = document.getElementById('welcome-page');
+  wp.style.display = 'flex';
+  // 下一個 frame 才移除 fade-out，讓 CSS transition 生效
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => { wp.classList.remove('fade-out'); });
+  });
+})();
 
 // 孩子頁面每 30 秒自動更新餘額和資料
 setInterval(async () => {
