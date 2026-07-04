@@ -3,7 +3,7 @@
 <html lang="zh-TW"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 v^^</title>
+<title>🌲 森林餐館 v42</title>
 <link href="./🌲 森林餐館 v45_files/css2" rel="stylesheet">
 <script src="./🌲 森林餐館 v45_files/Tone.js.下載"></script>
 <style>
@@ -2541,7 +2541,13 @@ function renderMamaOrders() {
   }
   if (done.length) {
     html += '<div class="section-title" style="padding-top:14px;">📋 歷史訂單</div>';
-    html += done.slice().reverse().slice(0,15).map(o => {
+    // 按 created_at 降序排列（最新在前），再取前 30 筆，確保兩個孩子的訂單都能出現
+    const sorted = done.slice().sort((a, b) => {
+      const ta = a.created_at || a.updated_at || '';
+      const tb = b.created_at || b.updated_at || '';
+      return tb.localeCompare(ta);
+    }).slice(0, 15);
+    html += sorted.map(o => {
       const m = MEMBERS[o.childId];
       const dotClass = o.status === 'approved' ? 'approved' : 'rejected';
       const statusTxt = o.status === 'approved' ? '✅ 已出餐' : '❌ 已取消';
@@ -3863,4 +3869,3 @@ setInterval(async () => {
 
 
 </body></html>
-
