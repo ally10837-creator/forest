@@ -1854,6 +1854,16 @@ async function loadAll() {
       console.error('harris JSON error:', e.message);
     }
     localChoreStatus = {};
+    // ★ 只清除已被 server 確認狀態的項目；若 server 仍回傳舊狀態，保留本地樂觀更新
+    ['candice','harris'].forEach(id => {
+      (allData[id]?.chores || []).forEach(c => {
+        const key = c.task_id + '_' + id;
+        if (key in localChoreStatus && c.status === localChoreStatus[key]) {
+          delete localChoreStatus[key]; // server 已確認，可以清掉
+        }
+        // server 還沒更新的話，保留 localChoreStatus 的覆蓋值
+      });
+    });
     updateBalanceDisplay();
     const childPageActive = document.getElementById('child-page')?.classList.contains('active');
     if (childPageActive) {
