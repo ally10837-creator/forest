@@ -1263,7 +1263,7 @@ let allData = {}; // { candice:{balance,chores,menu,orders}, harris:{...} }
 let carts = { candice: [], harris: [] }; // 每個孩子各自的購物車
 let penaltySeenCounts = {}; // 記錄每個孩子已經看過的處罰紀錄數量，用來偵測新紀錄並提示音效
 let currentSubTab = "menu";
-let currentMamaTab = "coins";
+let currentMamaTab = "approve";
 let mamaUnlocked = false;
 let localChoreStatus = {}; // choreId_childId → status (local until API confirms)
 
@@ -2247,7 +2247,7 @@ function checkPin() {
     document.getElementById('mama-content').classList.add('show');
     // 有資料就立刻渲染，不等背景重抓
     if (allData.candice) {
-      loadMamaTab(currentMamaTab);
+      switchMamaTab(currentMamaTab);
     }
     // 同時在背景重抓最新資料，完成後再渲染一次
     loadMamaAll();
@@ -2301,11 +2301,9 @@ async function manualRefreshMama() {
 
 async function loadMamaAll() {
   await loadAll();
-  // 讓瀏覽器先完成 DOM 更新，再渲染媽媽頁內容
   requestAnimationFrame(() => {
-    loadMamaTab(currentMamaTab);
-    // 300ms 後再渲染一次當備援，避免第一次因時機問題未成功
-    setTimeout(() => loadMamaTab(currentMamaTab), 300);
+    switchMamaTab(currentMamaTab);
+    setTimeout(() => switchMamaTab(currentMamaTab), 300);
   });
 }
 
