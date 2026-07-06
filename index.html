@@ -1387,13 +1387,16 @@ function showPage(page) {
   if (page === 'mama' && mamaUnlocked) loadMamaTab(currentMamaTab);
   if (page === 'child') {
     updateCartFab();
-    // ★ 先用現有資料立刻渲染畫面
-    if (allData[currentChild]) renderSubTab(currentSubTab);
-    // ★ 判斷快取是否還新鮮（5分鐘內），新鮮就不重抓
-    const cacheTime = Number(sessionStorage.getItem('menu_cache_time') || 0);
-    const cacheAge  = Date.now() - cacheTime;
-    if (cacheAge > 5 * 60 * 1000) {
-      loadAll(); // 背景靜默更新
+    if (allData[currentChild]) {
+      renderSubTab(currentSubTab);
+    }
+    // 沒資料一定要抓；有資料才看快取新鮮度
+    if (!allData[currentChild]) {
+      loadAll();
+    } else {
+      const cacheTime = Number(sessionStorage.getItem('menu_cache_time') || 0);
+      const cacheAge  = Date.now() - cacheTime;
+      if (cacheAge > 5 * 60 * 1000) loadAll();
     }
   }
 }
@@ -1697,9 +1700,11 @@ async function loadAll() {
     updateBalanceDisplay();
     const childPageActive = document.getElementById('child-page')?.classList.contains('active');
     if (childPageActive) {
-      renderSubTab(currentSubTab);
-      checkWeeklyReview(currentChild);
-      checkInterestNotification(); // ★ 週日利息入帳彈跳通知
+      requestAnimationFrame(() => {
+        renderSubTab(currentSubTab);
+        checkWeeklyReview(currentChild);
+        checkInterestNotification();
+      });
     }
   } catch(e) {
     showToast('⚠️ 載入失敗，請檢查網路', 'error');
@@ -2291,8 +2296,13 @@ async function manualRefreshMama() {
 }
 
 async function loadMamaAll() {
-  await loadAll(); // 每次進入媽媽後台都強制重新載入，確保 penaltyList 等資料是最新的
-  loadMamaTab(currentMamaTab);
+  await loadAll();
+  // 讓瀏覽器先完成 DOM 更新，再渲染媽媽頁內容
+  requestAnimationFrame(() => {
+    loadMamaTab(currentMamaTab);
+    // 300ms 後再渲染一次當備援，避免第一次因時機問題未成功
+    setTimeout(() => loadMamaTab(currentMamaTab), 300);
+  });
 }
 
 function loadMamaTab(tab) {
