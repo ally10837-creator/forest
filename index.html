@@ -680,7 +680,7 @@ body {
 <canvas id="fx-canvas" width="1322" height="908"></canvas>
 
 <!-- ═══════════ WELCOME PAGE ═══════════ -->
-<div id="welcome-page" class="fade-out" style="display: none;">
+<div id="welcome-page">
   <div class="wb" style="width:180px;height:180px;background:#ff6b9d;top:-40px;left:-50px;animation:wbob1 4s ease-in-out infinite;"></div>
   <div class="wb" style="width:140px;height:140px;background:#5bb8ff;top:60px;right:-30px;animation:wbob2 5s ease-in-out infinite;"></div>
   <div class="wb" style="width:200px;height:200px;background:#ffb830;bottom:80px;left:-60px;animation:wbob3 4.5s ease-in-out infinite;"></div>
@@ -751,7 +751,7 @@ body {
   </div>
   <div class="nav-right">
     <button class="nav-btn" onclick="showPage(&#39;child&#39;)" id="nav-child">🍽️ 點餐</button>
-    <button class="nav-btn active" onclick="showPage(&#39;mama&#39;)" id="nav-mama">👑 媽媽</button>
+    <button class="nav-btn" onclick="showPage(&#39;mama&#39;)" id="nav-mama">👑 媽媽</button>
   </div>
 </nav>
 
@@ -1685,7 +1685,6 @@ async function loadAll() {
     } catch(e) {
       console.error('harris JSON error:', e.message);
     }
-    localChoreStatus = {};
     // ★ 只清除已被 server 確認狀態的項目；若 server 仍回傳舊狀態，保留本地樂觀更新
     ['candice','harris'].forEach(id => {
       (allData[id]?.chores || []).forEach(c => {
