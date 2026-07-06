@@ -2648,10 +2648,6 @@ function renderBank() {
     detailHTML += `<div style="font-size:13px;font-weight:800;color:#ffb830;margin:10px 0 4px;">⚠️ ${rb('扣款明細')}</div>`;
     detailHTML += renderGroup(penaltyGroup, '-', '#ffb830');
   }
-  if (Object.keys(refundGroup).length) {
-    detailHTML += `<div style="font-size:13px;font-weight:800;color:#5bb8ff;margin:10px 0 4px;">↩️ ${rb('退幣明細')}</div>`;
-    detailHTML += renderGroup(refundGroup, '+', '#5bb8ff');
-  }
   if (!detailHTML) detailHTML = `<div style="text-align:center;color:#999;padding:20px;font-size:13px;">${rb('本週還沒有任何紀錄')}</div>`;
   document.getElementById('bank-detail').innerHTML = detailHTML;
 }
