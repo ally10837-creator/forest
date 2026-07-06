@@ -2245,8 +2245,13 @@ function checkPin() {
     mamaUnlocked = true;
     document.getElementById('mama-lock').style.display = 'none';
     document.getElementById('mama-content').classList.add('show');
+    // 有資料就立刻渲染，不等背景重抓
+    if (allData.candice) {
+      loadMamaTab(currentMamaTab);
+    }
+    // 同時在背景重抓最新資料，完成後再渲染一次
     loadMamaAll();
-    startMamaAutoRefresh(); // 解鎖後啟動自動重整
+    startMamaAutoRefresh();
   } else {
     document.getElementById('pin-err').textContent = '❌ 密碼錯誤！';
     const inp = document.getElementById('pin-input');
