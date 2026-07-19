@@ -1206,10 +1206,11 @@ body {
 <!-- ═══════════════════════════════════════════ -->
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/tone@14/build/Tone.js"></script>
 <script>
-const API = "https://script.google.com/macros/s/AKfycbyWRW0WWuVHZsJccHJxG621vO1zMJjzb2b7kDSg2uHKHKjdh6pw7c6RzxyAB7dHl9V_/exec";
+const API = "https://script.google.com/macros/s/AKfycbzapfIH-UBFpRsHUq2f6RSSVvscVTbSQhzPfCNwSBrez6Pd_qhlcTgaMOMO9Y7ikSv1/exec";
 const PIN = "5068"; // ← 改成你要的密碼
-const VERSION = "v47"; // ← 程式碼版本
+const VERSION = "v50"; // ← 程式碼版本
 
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
@@ -2078,10 +2079,15 @@ function confirmAddToCart() {
   if (!item) return;
   const cart = getCart();
   const existing = cart.find(c => c.food_id === foodId && c.note === note);
+  // 每個品項（同樣的備註）購物車最多 1 份，避免數量與後端實際扣款/庫存對不上
+  if (existing) {
+    showToast(`🛒 ${item.item_name} 已經在購物車裡囉，先送出這筆再點下一份！`, 'warn');
+    pendingAddFoodId = null;
+    return;
+  }
   // 若特價生效中，購物車副本的 price_coins 直接用特價，確保前端顯示總價跟後端實際扣款一致
   const effectivePrice = (item.is_sale_active == 1) ? item.sale_price : item.price_coins;
-  if (existing) { existing.qty++; }
-  else { cart.push({...item, price_coins: effectivePrice, original_price: item.price_coins, qty: 1, note: note || ''}); }
+  cart.push({...item, price_coins: effectivePrice, original_price: item.price_coins, qty: 1, note: note || ''});
   updateCartFab();
   showToast(`🛒 加入 ${MEMBERS[currentChild].name} 的購物車！`, 'success');
   playCoin();
@@ -2175,16 +2181,30 @@ async function submitOrder() {
   const m = MEMBERS[currentChild];
   closeCart();
   showToast(`📨 ${m.name} 的訂單送出中...`, '');
+  const failed = [];
   for (const item of cart) {
     const noteParam = item.note ? `&note=${encodeURIComponent(item.note)}` : '';
     const url = `${API}?action=purchaseItem&childId=${currentChild}&itemId=${encodeURIComponent(item.food_id)}${noteParam}`;
-    try { await fetch(url); } catch(e) {}
+    try {
+      const res = await fetch(url);
+      const result = await res.json();
+      if (result.error) failed.push({ item, error: result.error });
+    } catch(e) {
+      failed.push({ item, error: '網路異常' });
+    }
   }
-  setCart([]);
+  // 只清掉成功送出的品項，失敗的留在購物車，避免帳沒扣但東西已經清空
+  setCart(failed.map(f => f.item));
   updateCartFab();
   closeCart();
-  showToast(`🎉 ${m.name} 的訂單送出！等媽媽確認喔～`, 'success');
-  playBuy();
+  if (failed.length === 0) {
+    showToast(`🎉 ${m.name} 的訂單送出！等媽媽確認喔～`, 'success');
+    playBuy();
+  } else if (failed.length === cart.length) {
+    showToast(`❌ 訂單送出失敗：${failed[0].error}`, 'error');
+  } else {
+    showToast(`⚠️ 「${failed.map(f=>f.item.item_name).join('、')}」送出失敗，已保留在購物車`, 'warn');
+  }
   setTimeout(() => loadAll(), 2000);
   processingOrder = false;
   if (submitBtn) { submitBtn.disabled = false; submitBtn.style.opacity = '1'; }
@@ -3103,9 +3123,14 @@ async function rejectChore(choreId, childId, taskName) {
   if (!await showConfirm(`確定退回「${taskName}」？\n${MEMBERS[childId].name} 需要重新完成`)) return;
   processingChores.add(choreId);
   const url = `${API}?action=rejectChore&taskId=${encodeURIComponent(choreId)}&childId=${childId}`;
-  try { await fetch(url); } catch(e) {}
-  finally { processingChores.delete(choreId); }
-  showToast('已退回，請重新完成', 'error');
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) showToast('⚠️ ' + data.error, 'error');
+    else showToast('已退回，請重新完成', 'error');
+  } catch(e) {
+    showToast('⚠️ 網路錯誤', 'error');
+  } finally { processingChores.delete(choreId); }
   setTimeout(() => { loadAll().then(() => loadMamaTab('approve')); }, 1000);
 }
 
@@ -3121,9 +3146,14 @@ async function approveOrder(orderId, childId, itemName, coins, btnEl) {
     btn.textContent = '處理中...';
   }
   const url = `${API}?action=approvePurchase&orderId=${encodeURIComponent(orderId)}&childId=${childId}`;
-  try { await fetch(url); } catch(e) {}
-  finally { processingOrders.delete(orderId); }
-  showToast(`✅ 出餐確認！`, 'success');
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) showToast('⚠️ ' + data.error, 'error');
+    else showToast(`✅ 出餐確認！`, 'success');
+  } catch(e) {
+    showToast('⚠️ 網路錯誤', 'error');
+  } finally { processingOrders.delete(orderId); }
   setTimeout(() => { loadAll().then(() => loadMamaTab('orders')); }, 1000);
 }
 
@@ -3132,9 +3162,14 @@ async function rejectOrder(orderId, childId, itemName, coins) {
   if (!await showConfirm(`取消「${itemName}」訂單？\n將退還 ${coins} 枚代幣給 ${MEMBERS[childId].name}`)) return;
   processingOrders.add(orderId);
   const url = `${API}?action=rejectPurchase&orderId=${encodeURIComponent(orderId)}&childId=${childId}`;
-  try { await fetch(url); } catch(e) {}
-  finally { processingOrders.delete(orderId); }
-  showToast('訂單已取消，代幣退還', 'warn');
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) showToast('⚠️ ' + data.error, 'error');
+    else showToast('訂單已取消，代幣退還', 'warn');
+  } catch(e) {
+    showToast('⚠️ 網路錯誤', 'error');
+  } finally { processingOrders.delete(orderId); }
   setTimeout(() => { loadAll().then(() => loadMamaTab('orders')); }, 1000);
 }
 
@@ -3319,8 +3354,14 @@ async function savePenaltyListItem(penaltyId) {
 async function deletePenaltyListItem(penaltyId) {
   if (!await showConfirm('確定刪除這個違規項目？')) return;
   const url = `${API}?action=deletePenaltyItem&penaltyId=${encodeURIComponent(penaltyId)}`;
-  try { await fetch(url); } catch(e) {}
-  showToast('🗑 已刪除', 'warn');
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) showToast('⚠️ ' + data.error, 'error');
+    else showToast('🗑 已刪除', 'warn');
+  } catch(e) {
+    showToast('⚠️ 網路錯誤', 'error');
+  }
   await loadAll();
   renderPenaltyEditor();
 }
@@ -3330,16 +3371,28 @@ async function saveMenuItem(foodId) {
   const price = document.getElementById('mp-'+foodId).value;
   const stock = document.getElementById('ms-'+foodId).value;
   const url = `${API}?action=updateMenuItem&foodId=${encodeURIComponent(foodId)}&itemName=${encodeURIComponent(name)}&priceCoins=${price}&stock=${stock}`;
-  try { await fetch(url); } catch(e) {}
-  showToast('💾 已儲存菜單變更', 'success');
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) showToast('⚠️ ' + data.error, 'error');
+    else showToast('💾 已儲存菜單變更', 'success');
+  } catch(e) {
+    showToast('⚠️ 網路錯誤', 'error');
+  }
   setTimeout(() => { loadAll().then(() => renderMenuEditor()); }, 1000);
 }
 
 async function deleteMenuItem(foodId) {
   if (!await showConfirm('確定刪除這個品項？')) return;
   const url = `${API}?action=deleteMenuItem&foodId=${encodeURIComponent(foodId)}`;
-  try { await fetch(url); } catch(e) {}
-  showToast('🗑 品項已刪除', 'warn');
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) showToast('⚠️ ' + data.error, 'error');
+    else showToast('🗑 品項已刪除', 'warn');
+  } catch(e) {
+    showToast('⚠️ 網路錯誤', 'error');
+  }
   setTimeout(() => { loadAll().then(() => renderMenuEditor()); }, 1000);
 }
 
@@ -3356,7 +3409,9 @@ async function saveChoreItem(taskId) {
   const diff  = document.getElementById('cd-'+taskId).value;
   const url = `${API}?action=updateChore&taskId=${encodeURIComponent(taskId)}&taskName=${encodeURIComponent(name)}&rewardCoins=${coins}&difficulty=${encodeURIComponent(diff)}`;
   try {
-    await fetch(url);
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) { showToast('⚠️ ' + data.error, 'error'); return; }
     showToast('💾 已儲存家事變更', 'success');
     await loadAll();
     renderChoreEditor();
@@ -3379,8 +3434,14 @@ function toggleChoreActive(taskId) {
 async function deleteChoreItem(taskId) {
   if (!await showConfirm('確定刪除這個家事任務？')) return;
   const url = `${API}?action=deleteChore&taskId=${encodeURIComponent(taskId)}`;
-  try { await fetch(url); } catch(e) {}
-  showToast('🗑 任務已刪除', 'warn');
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) showToast('⚠️ ' + data.error, 'error');
+    else showToast('🗑 任務已刪除', 'warn');
+  } catch(e) {
+    showToast('⚠️ 網路錯誤', 'error');
+  }
   setTimeout(() => { loadAll().then(() => renderChoreEditor()); }, 1000);
 }
 
