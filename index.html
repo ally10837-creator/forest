@@ -3,7 +3,7 @@
 <html lang="zh-TW"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 v47</title>
+<title>🌲 森林餐館 v51</title>
 <style>
 :root {
   --cream: #fffdf6;
@@ -747,7 +747,7 @@ body {
       <rect x="12" y="21" width="8" height="8" rx="2" fill="#A1887F"></rect>
       <rect x="15" y="23" width="2" height="4" rx="1" fill="#6D4C41"></rect>
     </svg>
-    森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v47</span>
+    森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v51</span>
   </div>
   <div class="nav-right">
     <button class="nav-btn" onclick="showPage(&#39;child&#39;)" id="nav-child">🍽️ 點餐</button>
@@ -1208,9 +1208,9 @@ body {
 <!-- ═══════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/tone@14/build/Tone.js"></script>
 <script>
-const API = "https://script.google.com/macros/s/AKfycbxYJJjSZDLzoK2jhuhiTKNnyPyQmG0NTMAGuPWHbms_CCIn2caB8j-WBaq75cNqnPYk/exec";
+const API = "https://script.google.com/macros/s/AKfycbztn8l52JBZ97QKxZRuuXjitp2dBYgYNTkIh3ngtcHHpC9igUME60n_wNGcV5ZqMw-J/exec";
 const PIN = "5068"; // ← 改成你要的密碼
-const VERSION = "v50"; // ← 程式碼版本
+const VERSION = "v51"; // ← 程式碼版本
 
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
@@ -2341,7 +2341,7 @@ function loadMamaTab(tab) {
 function renderApprove() {
   const pending = [];
   ['candice','harris'].forEach(id => {
-    (allData[id]?.chores || []).filter(c => c.status === 'review').forEach(c => pending.push({...c, childId:id}));
+    (allData[id]?.pendingChoreDeclarations || []).forEach(c => pending.push({...c, childId:id}));
   });
 
   document.getElementById('pending-count').textContent = pending.length;
@@ -2365,13 +2365,13 @@ function renderApprove() {
           <div class="review-avatar ${c.childId}" style="overflow:hidden;">${memberAvatar(c.childId, 32)}</div>
           <div>
             <div class="review-name">${rb(c.task_name)}</div>
-            <div class="review-meta">${m.name}・${rb('難度')} ${c.difficulty || '🌟'}</div>
+            <div class="review-meta">${m.name}・${rb('宣告時間')} ${c.declared_at || ''}</div>
           </div>
           <div class="review-coin" style="display:flex;align-items:center;gap:3px;">${C(14)} ${c.reward_coins}</div>
         </div>
         <div class="review-actions">
-          <button class="rev-btn approve" onclick="approveChore('${c.task_id}','${c.childId}',${c.reward_coins},'${c.task_name}',this)">✅ 通過，給幣！</button>
-          <button class="rev-btn reject"  onclick="rejectChore('${c.task_id}','${c.childId}','${c.task_name}')">❌ 退回重做</button>
+          <button class="rev-btn approve" onclick="approveChore('${c.declare_id}','${c.childId}',${c.reward_coins},'${c.task_name}',this)">✅ 通過，給幣！</button>
+          <button class="rev-btn reject"  onclick="rejectChore('${c.declare_id}','${c.childId}','${c.task_name}')">❌ 退回重做</button>
         </div>
       </div>`;
   }).join('');
@@ -3100,7 +3100,7 @@ async function approveChore(choreId, childId, coins, taskName, btnEl) {
   }
 
   showToast('處理中...', '');
-  const url = `${API}?action=approveChore&taskId=${encodeURIComponent(choreId)}&childId=${childId}`;
+  const url = `${API}?action=approveChore&declareId=${encodeURIComponent(choreId)}&childId=${childId}`;
   try {
     const res = await fetch(url);
     const data = await res.json();
@@ -3122,7 +3122,7 @@ async function rejectChore(choreId, childId, taskName) {
   if (processingChores.has(choreId)) return; // 避免跟核准衝突重複送出
   if (!await showConfirm(`確定退回「${taskName}」？\n${MEMBERS[childId].name} 需要重新完成`)) return;
   processingChores.add(choreId);
-  const url = `${API}?action=rejectChore&taskId=${encodeURIComponent(choreId)}&childId=${childId}`;
+  const url = `${API}?action=rejectChore&declareId=${encodeURIComponent(choreId)}&childId=${childId}`;
   try {
     const res = await fetch(url);
     const data = await res.json();
