@@ -2227,12 +2227,12 @@ async function declareChore(choreId) {
   playPluck('E5', '0.05');
   const url = `${API}?action=declareChore&choreId=${encodeURIComponent(choreId)}&childId=${childAtClick}`;
   try {
-    await fetch(url);
+    const res = await fetch(url); const data = await res.json(); if (data.error) { delete localChoreStatus[choreId + '_' + childAtClick]; showToast('⚠️ ' + data.error, 'error'); }
     await loadAll(); // API 回應後立刻刷新，不用再等 2.5 秒
   } catch(e) {
     delete localChoreStatus[choreId + '_' + childAtClick]; // 失敗就清掉樂觀更新的假象，畫面復原
     showToast('❌ 申報失敗，請重試', 'error');
-    renderChores(allData[currentChild]);
+    await loadAll().catch(() => renderChores(allData[currentChild]));
   }
 }
 
