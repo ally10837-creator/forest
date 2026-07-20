@@ -3186,7 +3186,7 @@ async function childCancelOrder(orderId, coins) {
 
   const url = `${API}?action=rejectPurchase&orderId=${encodeURIComponent(orderId)}&childId=${currentChild}`;
   try {
-    await fetch(url);
+    const res = await fetch(url); const data = await res.json(); if (data.error) { showToast('⚠️ ' + data.error, 'error'); cancellingOrders.delete(orderId); btns.forEach(b => { b.disabled = false; b.style.opacity = ''; b.style.pointerEvents = ''; }); return; }
     showToast(`✅ 已取消，退還 ${coins} 枚代幣！`, 'success');
     setTimeout(() => loadAll(), 800);
   } catch(e) {
