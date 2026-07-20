@@ -3187,8 +3187,8 @@ async function childCancelOrder(orderId, coins) {
   const url = `${API}?action=rejectPurchase&orderId=${encodeURIComponent(orderId)}&childId=${currentChild}`;
   try {
     const res = await fetch(url); const data = await res.json(); if (data.error) { showToast('⚠️ ' + data.error, 'error'); cancellingOrders.delete(orderId); btns.forEach(b => { b.disabled = false; b.style.opacity = ''; b.style.pointerEvents = ''; }); return; }
-    showToast(`✅ 已取消，退還 ${coins} 枚代幣！`, 'success');
-    setTimeout(() => loadAll(), 800);
+    showToast(`✅ 已取消，退還 ${coins} 枚代幣！`, 'success'); cancellingOrders.delete(orderId);
+    await loadAll(); btns.forEach(b => { b.disabled = false; b.style.opacity = ''; b.style.pointerEvents = ''; });
   } catch(e) {
     showToast('❌ 取消失敗，請重試', 'error');
     cancellingOrders.delete(orderId); // 失敗的話允許使用者重試
