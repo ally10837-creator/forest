@@ -2177,7 +2177,7 @@ function confirmAddToCart() {
   cart.push({...item, price_coins: effectivePrice, original_price: item.price_coins, qty: 1, note: note || ''});
   updateCartFab();
   showToast(`🛒 加入 ${MEMBERS[currentChild].name} 的購物車！`, 'success');
-  playCoin();
+  playAudioAsset('cartAdd');
   pendingAddFoodId = null;
   // 小熊大廚：成功加入購物車台詞
   const bs = document.getElementById('bear-speech');
@@ -2329,7 +2329,7 @@ function showFundsModal(total, balance) {
   document.getElementById('funds-msg').innerHTML =
     `需要 ${C(14)} ${total}，但只有 ${C(14)} ${balance}<br>快去做家事賺幣吧！`;
   document.getElementById('funds-modal').classList.add('open');
-  playFail();
+  playAudioAsset('coinInsufficient');
   // 小熊大廚：代幣不足台詞
   const bs = document.getElementById('bear-speech');
   if (bs) bs.innerHTML = rb('存錢筒不夠喔！先去做家事賺幣，大廚等你！💪');
@@ -2887,7 +2887,7 @@ function checkInterestNotification() {
   document.body.appendChild(modal);
 
   localStorage.setItem(notifyKey, '1');
-  playCoin();
+  playAudioAsset('coin');
   burst(80, '#a78bfa');
 }
 
@@ -2970,7 +2970,7 @@ function showRateDetail() {
 
   const modal = document.getElementById('rate-detail-modal');
   modal.style.display = 'flex';
-  playCoin();
+  playAudioAsset('uiClick');
 }
 
 function closeRateDetail() {
@@ -3193,7 +3193,7 @@ async function approveChore(choreId, childId, coins, taskName, btnEl) {
     const data = await res.json();
     if (data.success) {
       showToast(`🎉 ${MEMBERS[childId].name} 獲得 ${data.coinsAwarded || coins} 枚代幣！`, 'success');
-      playCoin();
+      playAudioAsset('coin');
       burst(120, '#ffb830');
     } else {
       showToast('⚠️ ' + (data.error || '發幣失敗'), 'error');
@@ -3306,7 +3306,7 @@ async function adjustCoins(childId, sign) {
     if (data.success) {
       const label = sign > 0 ? `給了 ${MEMBERS[childId].name} ${amt} 枚代幣` : `扣了 ${MEMBERS[childId].name} ${amt} 枚代幣`;
       showToast('✏️ ' + label, sign>0?'success':'warn');
-      if (sign>0) { playCoin(); burst(60,'#ffb830'); }
+      if (sign>0) { playAudioAsset('coin'); burst(60,'#ffb830'); }
     } else {
       showToast('⚠️ ' + (data.error || '操作失敗'), 'error');
     }
@@ -3685,6 +3685,22 @@ function playWhistle() {
 // 跟 AUDIO_ASSETS_MIN 可以直接刪除，不影響其他程式碼。
 const AUDIO_ASSETS_MIN = {
   orderSuccess: { file: 'sounds/ui/sfx_order_success_01.mp3', volume: 0.7, cooldown: 500 },
+  // ── 本輪新增：有實際觸發點 ──
+  coin:            { file: 'sounds/ui/sfx_reward_coin_01.mp3',       volume: 0.80, cooldown: 600 },
+  cartAdd:         { file: 'sounds/ui/sfx_cart_add_01.mp3',          volume: 0.80, cooldown: 300 },
+  coinInsufficient:{ file: 'sounds/ui/sfx_coin_insufficient_01.mp3', volume: 0.75, cooldown: 600 },
+  uiClick:         { file: 'sounds/ui/sfx_ui_click_01.mp3',          volume: 0.75, cooldown: 150 },
+  // ── 本輪新增：只註冊，本輪不建立呼叫點（見同批交付說明）──
+  // squirrelRun：目前沒有真正的松鼠移動動畫，不建立假觸發。
+  squirrelRun:        { file: 'sounds/event/sfx_event_squirrel_run_01.mp3',         volume: 0.75, cooldown: 500 },
+  // 以下 4 個為 loop 素材（BGM／Ambient）。playAudioAsset() 是一次性播放函式，
+  // 沒有 loop／crossfade／ducking／visibilitychange 機制，這輪只登記路徑與音量，
+  // 不呼叫、不播放，避免在沒有可靠日夜/場景狀態判斷的情況下建立假觸發或半成品播放邏輯。
+  forestDayAmbience:  { file: 'sounds/ambience/ambient_forest_day_loop_01.mp3',     volume: 0.30, cooldown: 0 },
+  restaurantAmbience: { file: 'sounds/ambience/ambient_restaurant_room_loop_01.mp3',volume: 0.22, cooldown: 0 },
+  ambienceNightBugs:  { file: 'sounds/ambience/ambient_night_bugs_loop_01.mp3',     volume: 0.22, cooldown: 0 },
+  bgmDay:             { file: 'sounds/bgm/bgm_forest_cafe_day_loop_01.mp3',         volume: 0.42, cooldown: 0 },
+  bgmNight:           { file: 'sounds/bgm/bgm_forest_cafe_night_loop_01.mp3',       volume: 0.42, cooldown: 0 },
 };
 const _audioAssetPool = {};
 const _audioAssetLastPlayed = {};
