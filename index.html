@@ -2,7 +2,7 @@
 <html lang="zh-TW"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 v52</title>
+<title>🌲 森林餐館 v53</title>
 <style>
 :root {
   --cream: #fffdf6;
@@ -746,7 +746,7 @@ body {
       <rect x="12" y="21" width="8" height="8" rx="2" fill="#A1887F"></rect>
       <rect x="15" y="23" width="2" height="4" rx="1" fill="#6D4C41"></rect>
     </svg>
-    森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v52</span>
+    森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v53</span>
   </div>
   <div class="nav-right">
     <button class="nav-btn" onclick="showPage(&#39;child&#39;)" id="nav-child">🍽️ 點餐</button>
@@ -1209,7 +1209,7 @@ body {
 <script>
 const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSXmVSbLdixC8yrxd83cWBxho6EP79nVzWk0peTre9s/exec";
 const PIN = "5068"; // ← 改成你要的密碼
-const VERSION = "v52"; // ← 程式碼版本
+const VERSION = "v53"; // ← 程式碼版本
 
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
@@ -3698,9 +3698,9 @@ const AUDIO_ASSETS_MIN = {
   // 不呼叫、不播放，避免在沒有可靠日夜/場景狀態判斷的情況下建立假觸發或半成品播放邏輯。
   forestDayAmbience:  { file: 'sounds/ambience/ambient_forest_day_loop_01.mp3',     volume: 0.30, cooldown: 0 },
   restaurantAmbience: { file: 'sounds/ambience/ambient_restaurant_room_loop_01.mp3',volume: 0.22, cooldown: 0 },
-  ambienceNightBugs:  { file: 'sounds/ambience/ambient_night_bugs_loop_01.mp3',     volume: 0.22, cooldown: 0 },
+  ambienceNightBugs:  { file: 'sounds/ambience/ambient_night_bugs_loop_01.mp3',     volume: 0.22, cooldown: 0, loop: true },
   bgmDay:             { file: 'sounds/bgm/bgm_forest_cafe_day_loop_01.mp3',         volume: 0.42, cooldown: 0 },
-  bgmNight:           { file: 'sounds/bgm/bgm_forest_cafe_night_loop_01.mp3',       volume: 0.42, cooldown: 0 },
+  bgmNight:           { file: 'sounds/bgm/bgm_forest_cafe_night_loop_01.mp3',       volume: 0.42, cooldown: 0, loop: true },
 };
 const _audioAssetPool = {};
 const _audioAssetLastPlayed = {};
@@ -3711,11 +3711,24 @@ function playAudioAsset(key) {
     if (!track) return; // 找不到設定，安靜跳過，不報錯
     const now = Date.now();
     if (now - (_audioAssetLastPlayed[key] || 0) < track.cooldown) return; // 冷卻中，安靜跳過
-    _audioAssetLastPlayed[key] = now;
     let audio = _audioAssetPool[key];
     if (!audio) { audio = new Audio(); _audioAssetPool[key] = audio; }
-    audio.src = track.file;
+    // loop 素材的幂等保護：同一路徑已經在播放就直接跳過，不重設 src／currentTime／play()，
+    // 避免每次呼叫（例如30秒定時重新判斷）都讓循環中的 BGM／環境音從頭重播；
+    // 同一路徑但目前是暫停狀態（例如白天→夜間切回來）則不重設 src，讓它從目前 currentTime
+    // 繼續播放——currentTime 歸零是 stopNightAudio() 的責任，不是這裡。
+    // audio.src 一經指定會被瀏覽器正規化成絕對網址，這裡用同樣方式算出 track.file 的絕對網址再比較。
+    let targetSrc = '';
+    if (track.loop) {
+      targetSrc = new URL(track.file, window.location.href).href;
+      if (audio.src === targetSrc && !audio.paused) return;
+    }
+    _audioAssetLastPlayed[key] = now;
+    if (!track.loop || audio.src !== targetSrc) {
+      audio.src = track.file;
+    }
     audio.volume = track.volume;
+    audio.loop = !!track.loop;
     audio.onerror = () => {
       if (_audioAssetWarned.has(key)) return;
       _audioAssetWarned.add(key);
@@ -3729,6 +3742,45 @@ function playAudioAsset(key) {
   } catch(e) {
     // 任何非預期錯誤都不能讓呼叫端（submitOrder）中斷
   }
+}
+
+// ── 夜間雙音軌（bgmNight／ambienceNightBugs）：第二批最小實作 ──
+// 刻意不建立 WorldState／ContextEngine 或任何通用時間架構，只服務這兩個素材。
+// 使用裝置本機時間，18:00–05:59 視為夜間，06:00–17:59 視為白天。
+function isNightTime(now = new Date()) {
+  const h = now.getHours();
+  return h >= 18 || h < 6;
+}
+
+function startNightAudio() {
+  // playAudioAsset() 內建的 loop 幂等保護會確保多次呼叫不重播、不疊加
+  playAudioAsset('bgmNight');
+  playAudioAsset('ambienceNightBugs');
+}
+
+function stopNightAudio() {
+  ['bgmNight', 'ambienceNightBugs'].forEach(key => {
+    try {
+      const audio = _audioAssetPool[key];
+      if (!audio) return; // 尚未建立過，沒有東西可以停
+      audio.pause();
+      audio.currentTime = 0;
+    } catch(e) {
+      // 單一音軌操作失敗不得影響另一音軌，故個別 try/catch
+    }
+  });
+}
+
+let _hasEnteredRestaurant = false;
+let _lastNightState = null; // null＝尚未套用過，true／false＝上一次套用的日夜狀態
+
+// force=true：不論狀態是否改變都重新套用一次（進入餐館當下的首次套用用這個）
+function updateNightAudio(force = false) {
+  if (!_hasEnteredRestaurant) return; // 尚未進入餐館前，不得啟動背景音
+  const night = isNightTime();
+  if (!force && night === _lastNightState) return; // 狀態沒變，不重複切換、不從頭重播
+  _lastNightState = night;
+  if (night) startNightAudio(); else stopNightAudio();
 }
 
 // ── BEAR CHEF SVG ──
@@ -3865,6 +3917,8 @@ function pandaOfficerSVG(size=72) {
 // ── WELCOME PAGE ──
 async function enterRestaurant() {
   try { await Tone.start(); } catch(e) {}
+  _hasEnteredRestaurant = true;
+  updateNightAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
   playPluck('C5', '0.08', 'triangle');
   setTimeout(() => playPluck('E5', '0.08', 'triangle'), 100);
@@ -3921,6 +3975,7 @@ setInterval(async () => {
   if (childPageActive) {
     await loadAll();
   }
+  updateNightAudio(); // 不限定頁面，讓夜間音軌不因切換孩子/子分頁/媽媽後台而停止
 }, 30000);
 </script>
 </div><!-- /app-wrap -->
