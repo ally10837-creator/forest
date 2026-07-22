@@ -2,7 +2,7 @@
 <html lang="zh-TW"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 v53</title>
+<title>🌲 森林餐館 v54</title>
 <style>
 :root {
   --cream: #fffdf6;
@@ -746,7 +746,7 @@ body {
       <rect x="12" y="21" width="8" height="8" rx="2" fill="#A1887F"></rect>
       <rect x="15" y="23" width="2" height="4" rx="1" fill="#6D4C41"></rect>
     </svg>
-    森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v53</span>
+    森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v54</span>
   </div>
   <div class="nav-right">
     <button class="nav-btn" onclick="showPage(&#39;child&#39;)" id="nav-child">🍽️ 點餐</button>
@@ -1209,7 +1209,7 @@ body {
 <script>
 const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSXmVSbLdixC8yrxd83cWBxho6EP79nVzWk0peTre9s/exec";
 const PIN = "5068"; // ← 改成你要的密碼
-const VERSION = "v53"; // ← 程式碼版本
+const VERSION = "v54"; // ← 程式碼版本
 
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
@@ -3697,9 +3697,9 @@ const AUDIO_ASSETS_MIN = {
   // 沒有 loop／crossfade／ducking／visibilitychange 機制，這輪只登記路徑與音量，
   // 不呼叫、不播放，避免在沒有可靠日夜/場景狀態判斷的情況下建立假觸發或半成品播放邏輯。
   forestDayAmbience:  { file: 'sounds/ambience/ambient_forest_day_loop_01.mp3',     volume: 0.30, cooldown: 0 },
-  restaurantAmbience: { file: 'sounds/ambience/ambient_restaurant_room_loop_01.mp3',volume: 0.22, cooldown: 0 },
+  restaurantAmbience: { file: 'sounds/ambience/ambient_restaurant_room_loop_01.mp3',volume: 0.22, cooldown: 0, loop: true },
   ambienceNightBugs:  { file: 'sounds/ambience/ambient_night_bugs_loop_01.mp3',     volume: 0.22, cooldown: 0, loop: true },
-  bgmDay:             { file: 'sounds/bgm/bgm_forest_cafe_day_loop_01.mp3',         volume: 0.42, cooldown: 0 },
+  bgmDay:             { file: 'sounds/bgm/bgm_forest_cafe_day_loop_01.mp3',         volume: 0.42, cooldown: 0, loop: true },
   bgmNight:           { file: 'sounds/bgm/bgm_forest_cafe_night_loop_01.mp3',       volume: 0.42, cooldown: 0, loop: true },
 };
 const _audioAssetPool = {};
@@ -3744,8 +3744,8 @@ function playAudioAsset(key) {
   }
 }
 
-// ── 夜間雙音軌（bgmNight／ambienceNightBugs）：第二批最小實作 ──
-// 刻意不建立 WorldState／ContextEngine 或任何通用時間架構，只服務這兩個素材。
+// ── 日／夜背景雙音軌（白天：bgmDay／restaurantAmbience；夜間：bgmNight／ambienceNightBugs）：第三批最小實作 ──
+// 刻意不建立 WorldState／ContextEngine 或任何通用時間架構，只服務這四個素材。
 // 使用裝置本機時間，18:00–05:59 視為夜間，06:00–17:59 視為白天。
 function isNightTime(now = new Date()) {
   const h = now.getHours();
@@ -3771,16 +3771,35 @@ function stopNightAudio() {
   });
 }
 
+function startDayAudio() {
+  // 與 startNightAudio() 相同：playAudioAsset() 內建的 loop 幂等保護會確保多次呼叫不重播、不疊加
+  playAudioAsset('bgmDay');
+  playAudioAsset('restaurantAmbience');
+}
+
+function stopDayAudio() {
+  ['bgmDay', 'restaurantAmbience'].forEach(key => {
+    try {
+      const audio = _audioAssetPool[key];
+      if (!audio) return; // 尚未建立過，沒有東西可以停
+      audio.pause();
+      audio.currentTime = 0;
+    } catch(e) {
+      // 單一音軌操作失敗不得影響另一音軌，故個別 try/catch
+    }
+  });
+}
+
 let _hasEnteredRestaurant = false;
 let _lastNightState = null; // null＝尚未套用過，true／false＝上一次套用的日夜狀態
 
 // force=true：不論狀態是否改變都重新套用一次（進入餐館當下的首次套用用這個）
-function updateNightAudio(force = false) {
+function updateBackgroundAudio(force = false) {
   if (!_hasEnteredRestaurant) return; // 尚未進入餐館前，不得啟動背景音
   const night = isNightTime();
   if (!force && night === _lastNightState) return; // 狀態沒變，不重複切換、不從頭重播
   _lastNightState = night;
-  if (night) startNightAudio(); else stopNightAudio();
+  if (night) { stopDayAudio(); startNightAudio(); } else { stopNightAudio(); startDayAudio(); }
 }
 
 // ── BEAR CHEF SVG ──
@@ -3918,7 +3937,7 @@ function pandaOfficerSVG(size=72) {
 async function enterRestaurant() {
   try { await Tone.start(); } catch(e) {}
   _hasEnteredRestaurant = true;
-  updateNightAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
+  updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
   playPluck('C5', '0.08', 'triangle');
   setTimeout(() => playPluck('E5', '0.08', 'triangle'), 100);
@@ -3975,7 +3994,7 @@ setInterval(async () => {
   if (childPageActive) {
     await loadAll();
   }
-  updateNightAudio(); // 不限定頁面，讓夜間音軌不因切換孩子/子分頁/媽媽後台而停止
+  updateBackgroundAudio(); // 不限定頁面，讓背景音軌不因切換孩子/子分頁/媽媽後台而停止
 }, 30000);
 </script>
 </div><!-- /app-wrap -->
