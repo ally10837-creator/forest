@@ -2,7 +2,7 @@
 <html lang="zh-TW"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌲 森林餐館 v55</title>
+<title>🌲 森林餐館 v56</title>
 <style>
 :root {
   --cream: #fffdf6;
@@ -746,7 +746,7 @@ body {
       <rect x="12" y="21" width="8" height="8" rx="2" fill="#A1887F"></rect>
       <rect x="15" y="23" width="2" height="4" rx="1" fill="#6D4C41"></rect>
     </svg>
-    森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v55</span>
+    森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v56</span>
   </div>
   <div class="nav-right">
     <button class="nav-btn" onclick="showPage(&#39;child&#39;)" id="nav-child">🍽️ 點餐</button>
@@ -1209,7 +1209,7 @@ body {
 <script>
 const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSXmVSbLdixC8yrxd83cWBxho6EP79nVzWk0peTre9s/exec";
 const PIN = "5068"; // ← 改成你要的密碼
-const VERSION = "v55"; // ← 程式碼版本
+const VERSION = "v56"; // ← 程式碼版本
 
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
@@ -2642,7 +2642,6 @@ function renderBank() {
   const interest = week.filter(r => r.type === 'interest').reduce((s,r) => s + r.amount, 0);
   const spend    = week.filter(r => r.type === 'spend').reduce((s,r) => s + r.amount, 0);
   const penalty  = week.filter(r => r.type === 'penalty' || r.type === 'deduct').reduce((s,r) => s + r.amount, 0);
-  const refund   = week.filter(r => r.type === 'refund').reduce((s,r) => s + r.amount, 0);
   const currentBalance = allData[child]?.balance ?? 0;
   // 本週顯示當前餘額；歷史週用「當前餘額 - 該週結束後的淨收支」推算
   const afterWeekNet = bankWeek === 0 ? 0 : history.filter(r => {
@@ -2725,36 +2724,58 @@ function renderBank() {
     <span style="display:flex;align-items:center;gap:3px;"><span style="width:10px;height:10px;background:#ffb830;border-radius:2px;display:inline-block;"></span>${rb('扣款')}</span>
   `;
 
-  // Detail by group
-  const groupBy = (arr, key) => arr.reduce((m, r) => { (m[r[key]] = m[r[key]] || []).push(r); return m; }, {});
-  const earnGroup    = groupBy(week.filter(r => r.type === 'earn' || r.type === 'bonus'), 'reason');
-  const interestGroup= groupBy(week.filter(r => r.type === 'interest'), 'reason');
-  const spendGroup   = groupBy(week.filter(r => r.type === 'spend'), 'reason');
-  const penaltyGroup = groupBy(week.filter(r => r.type === 'penalty' || r.type === 'deduct'), 'reason');
-  const refundGroup  = groupBy(week.filter(r => r.type === 'refund'), 'reason');
+  // 每日逐筆明細：不再把整週相同原因合併加總
+  const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const visibleDetailTypes = ['earn','bonus','interest','spend','penalty','deduct'];
+  const detailDays = week.reduce((groups, record) => {
+    // refund 只供對帳與餘額反推，不在銀行明細建立日期卡片或顯示項目。
+    if (!visibleDetailTypes.includes(record.type)) return groups;
+    const d = parseCoinDate(record.created_at);
+    if (!d) return groups;
+    const key = dateKey(d);
+    if (!groups[key]) groups[key] = { date:d, records:[] };
+    groups[key].records.push(record);
+    return groups;
+  }, {});
 
-  const renderGroup = (grp, sign, color) => Object.entries(grp).map(([reason, items]) => {
-    const total = items.reduce((s,r) => s+r.amount, 0);
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px dashed #e8d5c4;">
-      <span style="font-size:13px;">• ${rb(reason)} ×${items.length}</span>
-      <span style="font-size:13px;font-weight:800;color:${color};">${sign}${total}</span>
-    </div>`;
-  }).join('');
+  const signedNet = r => {
+    if (['earn','bonus','interest','refund'].includes(r.type)) return r.amount;
+    if (['spend','penalty','deduct'].includes(r.type)) return -r.amount;
+    return 0;
+  };
+  const renderItems = (items, sign, color) => items.map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px dashed #e8d5c4;">
+      <span style="font-size:13px;">• ${rb(r.reason || '未註明')}</span>
+      <span style="font-size:13px;font-weight:800;color:${color};">${sign}${r.amount}</span>
+    </div>`).join('');
+  const renderSection = (title, icon, items, sign, color) => items.length ? `
+    <div style="font-size:13px;font-weight:800;color:${color};margin:10px 0 4px;">${icon} ${rb(title)}</div>
+    ${renderItems(items, sign, color)}` : '';
 
-  let detailHTML = '';
-  if (Object.keys(earnGroup).length || Object.keys(interestGroup).length) {
-    detailHTML += `<div style="font-size:13px;font-weight:800;color:#52c49a;margin:10px 0 4px;">📥 ${rb('賺幣明細')}</div>`;
-    detailHTML += renderGroup(earnGroup, '+', '#52c49a');
-    detailHTML += renderGroup(interestGroup, '+', '#a78bfa');
-  }
-  if (Object.keys(spendGroup).length) {
-    detailHTML += `<div style="font-size:13px;font-weight:800;color:#ff7f7f;margin:10px 0 4px;">📤 ${rb('花費明細')}</div>`;
-    detailHTML += renderGroup(spendGroup, '-', '#ff7f7f');
-  }
-  if (Object.keys(penaltyGroup).length) {
-    detailHTML += `<div style="font-size:13px;font-weight:800;color:#ffb830;margin:10px 0 4px;">⚠️ ${rb('扣款明細')}</div>`;
-    detailHTML += renderGroup(penaltyGroup, '-', '#ffb830');
-  }
+  let detailHTML = Object.values(detailDays)
+    .sort((a,b) => b.date - a.date)
+    .map(day => {
+      const endOfDay = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate(), 23, 59, 59, 999);
+      const afterDayNet = history.reduce((sum, r) => {
+        const d = parseCoinDate(r.created_at);
+        return d && d > endOfDay ? sum + signedNet(r) : sum;
+      }, 0);
+      const dayBalance = Math.max(0, currentBalance - afterDayNet);
+      const earnItems = day.records.filter(r => r.type === 'earn' || r.type === 'bonus');
+      const interestItems = day.records.filter(r => r.type === 'interest');
+      const spendItems = day.records.filter(r => r.type === 'spend');
+      const penaltyItems = day.records.filter(r => r.type === 'penalty' || r.type === 'deduct');
+      return `<div style="background:white;border:2px solid #e0d0c0;border-radius:14px;padding:10px 12px;margin-top:10px;box-shadow:2px 2px 0 #e0d0c0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:7px;border-bottom:2px solid #f0e5d8;">
+          <span style="font-size:14px;font-weight:900;">${day.date.getMonth()+1}/${day.date.getDate()}</span>
+          <span style="font-size:13px;font-weight:800;color:#6b3fc8;">💰 ${rb('餘額')} ${dayBalance}</span>
+        </div>
+        ${renderSection('賺幣明細', '📥', earnItems, '+', '#52c49a')}
+        ${renderSection('利息明細', '✨', interestItems, '+', '#a78bfa')}
+        ${renderSection('花費明細', '📤', spendItems, '-', '#ff7f7f')}
+        ${renderSection('扣款明細', '⚠️', penaltyItems, '-', '#ffb830')}
+      </div>`;
+    }).join('');
   if (!detailHTML) detailHTML = `<div style="text-align:center;color:#999;padding:20px;font-size:13px;">${rb('本週還沒有任何紀錄')}</div>`;
   document.getElementById('bank-detail').innerHTML = detailHTML;
 }
