@@ -2286,7 +2286,7 @@ async function submitOrder() {
   closeCart();
   if (failed.length === 0) {
     showToast(`🎉 ${m.name} 的訂單送出！等媽媽確認喔～`, 'success');
-    playBuy();
+    playAudioAsset('orderSuccess');
   } else if (failed.length === cart.length) {
     showToast(`❌ 訂單送出失敗：${failed[0].error}`, 'error');
   } else {
@@ -3677,6 +3677,42 @@ function playFail() {
 function playWhistle() {
   setTimeout(()=>playPluck('A6','0.08','square'),0);
   setTimeout(()=>playPluck('A6','0.08','square'),150);
+}
+
+// ── playAudioAsset()：第一階段最小獨立音訊層 ──
+// 刻意不依賴任何更大的音訊/語音架構，只做「播放一個固定音檔、缺檔或播放失敗時安靜
+// 降級、不中斷呼叫端」這一件事。之後若要接上完整架構，只需要把呼叫端換掉，這支函式
+// 跟 AUDIO_ASSETS_MIN 可以直接刪除，不影響其他程式碼。
+const AUDIO_ASSETS_MIN = {
+  orderSuccess: { file: 'sounds/ui/sfx_order_success_01.mp3', volume: 0.7, cooldown: 500 },
+};
+const _audioAssetPool = {};
+const _audioAssetLastPlayed = {};
+const _audioAssetWarned = new Set();
+function playAudioAsset(key) {
+  try {
+    const track = AUDIO_ASSETS_MIN[key];
+    if (!track) return; // 找不到設定，安靜跳過，不報錯
+    const now = Date.now();
+    if (now - (_audioAssetLastPlayed[key] || 0) < track.cooldown) return; // 冷卻中，安靜跳過
+    _audioAssetLastPlayed[key] = now;
+    let audio = _audioAssetPool[key];
+    if (!audio) { audio = new Audio(); _audioAssetPool[key] = audio; }
+    audio.src = track.file;
+    audio.volume = track.volume;
+    audio.onerror = () => {
+      if (_audioAssetWarned.has(key)) return;
+      _audioAssetWarned.add(key);
+      console.warn('[playAudioAsset] 音效載入失敗（不影響操作）：' + track.file);
+    };
+    audio.play().catch(() => {
+      if (_audioAssetWarned.has(key)) return;
+      _audioAssetWarned.add(key);
+      console.warn('[playAudioAsset] 播放被瀏覽器阻擋或失敗（不影響操作）：' + track.file);
+    });
+  } catch(e) {
+    // 任何非預期錯誤都不能讓呼叫端（submitOrder）中斷
+  }
 }
 
 // ── BEAR CHEF SVG ──
