@@ -183,6 +183,18 @@ body {
 .modal-close {
   margin-left:auto; background:none; border:none; font-size:20px; cursor:pointer; padding:4px;
 }
+/* ── AUDIO SETTINGS (Audio UX v1.0) ── */
+.audio-toggle-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 12px; background:#f5ede4; border:2px solid var(--cocoa); border-radius:12px;
+}
+.audio-toggle-label { font-size:14px; font-weight:700; }
+.audio-toggle-btn {
+  background:white; border:2px solid var(--cocoa); border-radius:50px;
+  padding:5px 16px; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer;
+  min-width:44px;
+}
+.audio-toggle-btn.on { background:var(--mint); color:white; }
 .order-item {
   display:flex; align-items:center; gap:10px; padding: 10px 0;
   border-bottom: 2px dashed #ecdcc8;
@@ -749,6 +761,7 @@ body {
     森林餐館 <span style="font-size:10px;font-weight:600;opacity:0.6;vertical-align:middle;">v56</span>
   </div>
   <div class="nav-right">
+    <button class="nav-btn" onclick="openAudioSettings()" id="nav-audio-settings">🔊 音效設定</button>
     <button class="nav-btn" onclick="showPage(&#39;child&#39;)" id="nav-child">🍽️ 點餐</button>
     <button class="nav-btn" onclick="showPage(&#39;mama&#39;)" id="nav-mama">👑 媽媽</button>
   </div>
@@ -1163,6 +1176,19 @@ body {
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
+<!--         AUDIO SETTINGS MODAL (Audio UX v1.0) -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="audio-settings-modal">
+  <div class="modal-box" style="max-width:400px;">
+    <div class="modal-title">
+      🔊 音效設定
+      <button class="modal-close" onclick="closeAudioSettings()">✕</button>
+    </div>
+    <div id="audio-settings-rows" style="display:flex;flex-direction:column;gap:10px;padding-top:4px;"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
 <!--         INSUFFICIENT FUNDS MODAL            -->
 <!-- ═══════════════════════════════════════════ -->
 <div class="funds-modal" id="funds-modal" style="top: 0px; height: 908px; bottom: auto;">
@@ -1466,6 +1492,7 @@ function memberAvatar(id, size=36) {
 
 // ── PAGE ROUTING ──
 function showPage(page) {
+  cancelPendingVoiceSequence(); // Audio UX v1.0：切頁時取消尚未播放的延遲 Voice（哨音序列／排隊中的語音）
   document.querySelectorAll('.page').forEach(p => {
     if (p.id !== 'welcome-page') p.classList.remove('active');
   });
@@ -1501,6 +1528,7 @@ async function switchChild(id) {
 // ── SUB TABS ──
 const SUB_TAB_IDS = ['menu','chores','orders','penalty','bank'];
 function switchSubTab(tab) {
+  cancelPendingVoiceSequence(); // Audio UX v1.0：切分頁時取消尚未播放的延遲 Voice
   currentSubTab = tab;
   SUB_TAB_IDS.forEach(t => {
     document.getElementById('sub-'+t).classList.toggle('active', t===tab);
@@ -1892,6 +1920,7 @@ function renderMenu(data) {
 
 // ── RENDER CHORES ──
 function renderChores(data) {
+  playVoiceAsset('foxChoreWelcome'); // Audio UX v1.0：狐狸媽媽固定「家事頁歡迎」語音，冷卻由 playVoiceAsset() 內建的持久化 Cooldown 控制
   const list = document.getElementById('chore-list');
   const chores = (data.chores || []).filter(c => c.is_active != 0 && c.is_active !== '0' && c.is_active !== false);
   const challenges = chores.filter(c => c.challenge_active == 1);
@@ -2024,7 +2053,7 @@ function renderPenaltyList(data) {
   let pandaLine = '目前風平浪靜，紀律良好，繼續保持，教官會看在眼裡！';
   if (todayOnlyPenalties.length >= 3)    pandaLine = '嗶嗶嗶！今天違規次數太多了！教官希望明天能看到不一樣的你！😤';
   else if (todayOnlyPenalties.length >= 1) pandaLine = '嗶嗶！這裡記錄了你的違規，每一筆都已執行扣款，下次注意！';
-  else if (weekPenalties.length === 0) pandaLine = '本週零違規！教官頒發本週紀律獎章給你！⭐';
+  else if (weekPenalties.length === 0) { pandaLine = '本週零違規！教官頒發本週紀律獎章給你！⭐'; playVoiceAsset('pandaZeroViolation'); } // Audio UX v1.0：熊貓教官固定「零違規獎勵」語音
   speechEl.innerHTML = rb(pandaLine);
 
   if (todayPenalties.length === 0) {
@@ -2287,6 +2316,7 @@ async function submitOrder() {
   if (failed.length === 0) {
     showToast(`🎉 ${m.name} 的訂單送出！等媽媽確認喔～`, 'success');
     playAudioAsset('orderSuccess');
+    playVoiceAsset('bearOrderReceived'); // Audio UX v1.0：熊大廚固定「收到訂單」語音
   } else if (failed.length === cart.length) {
     showToast(`❌ 訂單送出失敗：${failed[0].error}`, 'error');
   } else {
@@ -2312,6 +2342,7 @@ async function declareChore(choreId) {
   renderChores(allData[currentChild]);
   showToast('✋ 已申報！等媽媽審核～', 'warn');
   playPluck('E5', '0.05');
+  playVoiceAsset('foxChoreSubmitted'); // Audio UX v1.0：狐狸媽媽固定「家事已送出」語音
   const url = `${API}?action=declareChore&choreId=${encodeURIComponent(choreId)}&childId=${childAtClick}`;
   try {
     const res = await fetch(url); const data = await res.json(); if (data.error) { delete localChoreStatus[choreId + '_' + childAtClick]; showToast('⚠️ ' + data.error, 'error'); }
@@ -2617,6 +2648,7 @@ function bankSpeech(earn, spend, penalty, interest, balance, isHistory) {
 }
 
 function renderBank() {
+  playVoiceAsset('hedgehogBankWelcome'); // Audio UX v1.0：刺蝟行長固定「銀行頁歡迎」語音，冷卻由 playVoiceAsset() 內建的持久化 Cooldown 控制
   const child = currentChild;
   const history = (allData[child]?.coinHistory) || [];
   const { monday, sunday } = getWeekRange(bankWeek);
@@ -2814,15 +2846,22 @@ function checkWeeklyReview(childId) {
   }).join('');
 
   // 週日彈跳：依狀況顯示動態台詞
+  // Audio UX v1.0：checkWeeklyReview() 本身已用 localStorage 的 weekly_review_shown key 限制
+  // 每週每個孩子只執行一次，這裡不需要再額外加 Cooldown。9 段語音只覆蓋「一般結算」與
+  // 「本週純花費」這兩種情境，其餘分支（純入帳／純利息／純扣款）維持沒有語音，不猜測配音。
   let wrSpeech = rb('嗶嗶！刺蝟行長結算時間到，來看看這週你的森林銀行帳戶！');
   if (earn + interest > 0 && spend === 0 && penalty === 0)
     wrSpeech = rb(`本週入帳 ${earn+interest} 枚，行長幫你蓋上本週勤勞章！`) + '⭐';
-  else if (spend > 0 && earn + interest === 0)
+  else if (spend > 0 && earn + interest === 0) {
     wrSpeech = rb(`本週花了 ${spend} 枚，買得開心嗎？下週繼續努力賺幣！`);
+    playVoiceAsset('hedgehogSpendingReminder');
+  }
   else if (interest > 0 && earn === 0 && spend === 0)
     wrSpeech = rb(`這週利息入帳 ${interest} 枚，錢放著也會長大，繼續存！`);
   else if (penalty > 0 && earn === 0)
     wrSpeech = rb(`這週被扣了 ${penalty} 枚，刺蝟行長幫你記下來，下週加油！`);
+  else
+    playVoiceAsset('hedgehogWeeklyBalance');
   document.getElementById('wr-speech').innerHTML = wrSpeech;
 
   let html = '';
@@ -3394,7 +3433,7 @@ async function applyQuickPenalty(penaltyId, reason, amount, childId) {
     const result = await res.json();
     if (result.error) { showToast('❌ ' + result.error, 'error'); return; }
     showToast(`🐼 已扣款 ${result.amount} 枚代幣`, 'warn');
-    playWhistle();
+    playPandaViolationSequence(); // Audio UX v1.0：違規紀錄成功送出，統一走 whistle_short → 約200ms → panda_violation_record
     await loadAll();
     renderPenaltyEditor();
   } catch(e) {
@@ -3422,7 +3461,7 @@ async function submitCustomPenalty(childId) {
     const result = await res.json();
     if (result.error) { showToast('❌ ' + result.error, 'error'); return; }
     showToast(`🐼 已扣款 ${result.amount} 枚代幣`, 'warn');
-    playWhistle();
+    playPandaViolationSequence(); // Audio UX v1.0：違規紀錄成功送出，統一走 whistle_short → 約200ms → panda_violation_record
     document.getElementById('penalty-custom-reason').value = '';
     document.getElementById('penalty-custom-amount').value = '';
     await loadAll();
@@ -3700,30 +3739,58 @@ function playWhistle() {
   setTimeout(()=>playPluck('A6','0.08','square'),150);
 }
 
+// ── Audio UX v1.0：音訊分類與播放狀態（Ambient／BGM／Voice／SFX 各自獨立） ──
+// 刻意只用 localStorage 存 4 個布林旗標＋安靜模式，不建立設定物件或版本遷移機制：
+// 這些 key 在正式站從未存在過，第一次讀取本來就會是「沒有值」→採用下面寫的預設值，
+// 天然滿足「新版第一次載入時 BGM 預設關閉」的需求，不需要額外的遷移程式。
+const AUDIO_CATEGORY_KEY = {
+  ambient: 'forest_audio_ambient_enabled',
+  bgm:     'forest_background_music_enabled', // 沿用既有候選檔已使用的 key 名稱
+  voice:   'forest_audio_voice_enabled',
+  sfx:     'forest_audio_sfx_enabled',
+  quiet:   'forest_audio_quiet_mode',
+};
+function _readAudioFlag(storageKey, defaultVal) {
+  try {
+    const v = localStorage.getItem(storageKey);
+    if (v === null) return defaultVal;
+    return v === '1';
+  } catch(e) { return defaultVal; }
+}
+function _writeAudioFlag(storageKey, val) {
+  try { localStorage.setItem(storageKey, val ? '1' : '0'); } catch(e) {}
+}
+function isAmbientEnabled()          { return _readAudioFlag(AUDIO_CATEGORY_KEY.ambient, true); }
+function isBackgroundMusicEnabled()  { return _readAudioFlag(AUDIO_CATEGORY_KEY.bgm, false); } // 預設關閉
+function isVoiceEnabled()            { return _readAudioFlag(AUDIO_CATEGORY_KEY.voice, true); }
+function isSfxEnabled()              { return _readAudioFlag(AUDIO_CATEGORY_KEY.sfx, true); }
+function isQuietModeOn()             { return _readAudioFlag(AUDIO_CATEGORY_KEY.quiet, false); }
+
 // ── playAudioAsset()：第一階段最小獨立音訊層 ──
 // 刻意不依賴任何更大的音訊/語音架構，只做「播放一個固定音檔、缺檔或播放失敗時安靜
 // 降級、不中斷呼叫端」這一件事。之後若要接上完整架構，只需要把呼叫端換掉，這支函式
 // 跟 AUDIO_ASSETS_MIN 可以直接刪除，不影響其他程式碼。
 const AUDIO_ASSETS_MIN = {
-  orderSuccess: { file: 'sounds/ui/sfx_order_success_01.mp3', volume: 0.7, cooldown: 500 },
+  orderSuccess: { file: 'sounds/ui/sfx_order_success_01.mp3', volume: 0.7, cooldown: 500, category: 'sfx' },
   // ── 本輪新增：有實際觸發點 ──
-  coin:            { file: 'sounds/ui/sfx_reward_coin_01.mp3',       volume: 0.80, cooldown: 600 },
-  cartAdd:         { file: 'sounds/ui/sfx_cart_add_01.mp3',          volume: 0.80, cooldown: 300 },
-  coinInsufficient:{ file: 'sounds/ui/sfx_coin_insufficient_01.mp3', volume: 0.75, cooldown: 600 },
-  uiClick:         { file: 'sounds/ui/sfx_ui_click_01.mp3',          volume: 0.75, cooldown: 150 },
+  coin:            { file: 'sounds/ui/sfx_reward_coin_01.mp3',       volume: 0.80, cooldown: 600, category: 'sfx' },
+  cartAdd:         { file: 'sounds/ui/sfx_cart_add_01.mp3',          volume: 0.80, cooldown: 300, category: 'sfx' },
+  coinInsufficient:{ file: 'sounds/ui/sfx_coin_insufficient_01.mp3', volume: 0.75, cooldown: 600, category: 'sfx' },
+  uiClick:         { file: 'sounds/ui/sfx_ui_click_01.mp3',          volume: 0.75, cooldown: 150, category: 'sfx' },
   // ── 第四批新增：取代 enterRestaurant() 原本的 playPluck() 四音階即時合成迎賓音 ──
-  welcomeEnter:    { file: 'sounds/ui/sfx_welcome_enter_01.mp3',      volume: 0.80, cooldown: 1000 },
+  welcomeEnter:    { file: 'sounds/ui/sfx_welcome_enter_01.mp3',      volume: 0.80, cooldown: 1000, category: 'sfx' },
   // ── 本輪新增：只註冊，本輪不建立呼叫點（見同批交付說明）──
   // squirrelRun：目前沒有真正的松鼠移動動畫，不建立假觸發。
-  squirrelRun:        { file: 'sounds/event/sfx_event_squirrel_run_01.mp3',         volume: 0.75, cooldown: 500 },
-  // 以下 4 個為 loop 素材（BGM／Ambient）。playAudioAsset() 是一次性播放函式，
-  // 沒有 loop／crossfade／ducking／visibilitychange 機制，這輪只登記路徑與音量，
-  // 不呼叫、不播放，避免在沒有可靠日夜/場景狀態判斷的情況下建立假觸發或半成品播放邏輯。
-  forestDayAmbience:  { file: 'sounds/ambience/ambient_forest_day_loop_01.mp3',     volume: 0.30, cooldown: 0 },
-  restaurantAmbience: { file: 'sounds/ambience/ambient_restaurant_room_loop_01.mp3',volume: 0.22, cooldown: 0, loop: true },
-  ambienceNightBugs:  { file: 'sounds/ambience/ambient_night_bugs_loop_01.mp3',     volume: 0.22, cooldown: 0, loop: true },
-  bgmDay:             { file: 'sounds/bgm/bgm_forest_cafe_day_loop_01.mp3',         volume: 0.42, cooldown: 0, loop: true },
-  bgmNight:           { file: 'sounds/bgm/bgm_forest_cafe_night_loop_01.mp3',       volume: 0.42, cooldown: 0, loop: true },
+  squirrelRun:        { file: 'sounds/event/sfx_event_squirrel_run_01.mp3',         volume: 0.75, cooldown: 500, category: 'sfx' },
+  // Audio UX v1.0：熊貓違規事件專用哨音（Edited 正式素材，取代原本 Tone.js 合成的 playWhistle()
+  // 只用在「違規紀錄成功送出」這一個新序列；playWhistle() 本身保留給既有的檢視頁面提示音使用）
+  sfxWhistle:         { file: 'sounds/sfx/whistle_short.mp3',                       volume: 1.0,  cooldown: 2000, category: 'sfx' },
+  // 環境聲／背景音樂：獨立分類，各自受 Ambient／BGM 開關與安靜模式控制
+  forestDayAmbience:  { file: 'sounds/ambience/ambient_forest_day_loop_01.mp3',     volume: 0.30, cooldown: 0, loop: true, category: 'ambient' },
+  restaurantAmbience: { file: 'sounds/ambience/ambient_restaurant_room_loop_01.mp3',volume: 0.22, cooldown: 0, loop: true, category: 'ambient' },
+  ambienceNightBugs:  { file: 'sounds/ambience/ambient_night_bugs_loop_01.mp3',     volume: 0.22, cooldown: 0, loop: true, category: 'ambient' },
+  bgmDay:             { file: 'sounds/bgm/bgm_forest_cafe_day_loop_01.mp3',         volume: 0.42, cooldown: 0, loop: true, category: 'bgm' },
+  bgmNight:           { file: 'sounds/bgm/bgm_forest_cafe_night_loop_01.mp3',       volume: 0.42, cooldown: 0, loop: true, category: 'bgm' },
 };
 const _audioAssetPool = {};
 const _audioAssetLastPlayed = {};
@@ -3732,6 +3799,10 @@ function playAudioAsset(key) {
   try {
     const track = AUDIO_ASSETS_MIN[key];
     if (!track) return; // 找不到設定，安靜跳過，不報錯
+    if (isQuietModeOn()) return; // 安靜模式：Ambient／BGM／SFX 全部暫停
+    if (track.category === 'ambient' && !isAmbientEnabled()) return;
+    if (track.category === 'bgm' && !isBackgroundMusicEnabled()) return;
+    if (track.category === 'sfx' && !isSfxEnabled()) return;
     const now = Date.now();
     if (now - (_audioAssetLastPlayed[key] || 0) < track.cooldown) return; // 冷卻中，安靜跳過
     let audio = _audioAssetPool[key];
@@ -3797,11 +3868,12 @@ function stopNightAudio() {
 function startDayAudio() {
   // 與 startNightAudio() 相同：playAudioAsset() 內建的 loop 幂等保護會確保多次呼叫不重播、不疊加
   playAudioAsset('bgmDay');
+  playAudioAsset('forestDayAmbience'); // Audio UX v1.0：鳥叫＋輕柔餐盤環境聲，Ambient 分類，預設開啟且不受音樂開關影響
   playAudioAsset('restaurantAmbience');
 }
 
 function stopDayAudio() {
-  ['bgmDay', 'restaurantAmbience'].forEach(key => {
+  ['bgmDay', 'forestDayAmbience', 'restaurantAmbience'].forEach(key => {
     try {
       const audio = _audioAssetPool[key];
       if (!audio) return; // 尚未建立過，沒有東西可以停
@@ -3823,6 +3895,230 @@ function updateBackgroundAudio(force = false) {
   if (!force && night === _lastNightState) return; // 狀態沒變，不重複切換、不從頭重播
   _lastNightState = night;
   if (night) { stopDayAudio(); startNightAudio(); } else { stopNightAudio(); startDayAudio(); }
+}
+
+function _stopAllAmbientAndBgm() {
+  ['bgmDay', 'bgmNight', 'forestDayAmbience', 'restaurantAmbience', 'ambienceNightBugs'].forEach(key => {
+    try {
+      const audio = _audioAssetPool[key];
+      if (!audio) return;
+      audio.pause(); // 只暫停不歸零，安靜模式關閉後從原本進度繼續，不是從頭重播
+    } catch(e) {}
+  });
+}
+
+function setSfxEnabled(enabled) { _writeAudioFlag(AUDIO_CATEGORY_KEY.sfx, enabled); }
+
+function setBackgroundMusicEnabled(enabled) {
+  _writeAudioFlag(AUDIO_CATEGORY_KEY.bgm, enabled);
+  if (!_hasEnteredRestaurant) return; // 尚未進入餐館前只記住選擇，不提前播放，避免瀏覽器 autoplay 問題
+  if (!enabled) {
+    ['bgmDay', 'bgmNight'].forEach(key => {
+      try { const a = _audioAssetPool[key]; if (a) { a.pause(); a.currentTime = 0; } } catch(e) {}
+    });
+  } else if (!isQuietModeOn()) {
+    playAudioAsset(isNightTime() ? 'bgmNight' : 'bgmDay');
+  }
+}
+
+// ── Audio UX v1.0：角色語音（Voice）最小必要控制器 ──
+// 刻意只做「同時間只播一句、防止重疊、每句獨立 Cooldown、播放時降低 BGM／Ambient、
+// 結束或失敗都會恢復音量」這幾件事，不建立 AudioManager／VoiceManager 或完整 Registry
+// 架構，也不搬移 Drive master 的音訊程式。9 段語音都是固定情境語音，不朗讀動態畫面
+// 文字，因此這裡不建立、也不需要 Dialogue 逐字文字 metadata。
+//
+// Cooldown 選擇（本輪自行選定，非既有文件規定值，可再調整）：
+// - 「進入型」（歡迎詞／零違規獎勵）：30 分鐘，並用 localStorage 持久化，
+//   確保 F5、30 秒定時刷新、短時間內重複切換頁籤都不會重播。
+// - 「動作型」（訂單/家事/違規紀錄送出）：4 秒，只用來擋同一動作被快速重複觸發，
+//   不需要跨重新整理持久化。
+const VOICE_ASSETS = {
+  bearRestaurantWelcome:    { file: 'sounds/voice/bear_restaurant_welcome.mp3',    volume: 0.9, cooldown: 30*60*1000, persist: true },
+  bearOrderReceived:        { file: 'sounds/voice/bear_order_received.mp3',        volume: 0.9, cooldown: 4000 },
+  foxChoreWelcome:          { file: 'sounds/voice/fox_chore_welcome.mp3',          volume: 0.9, cooldown: 30*60*1000, persist: true },
+  foxChoreSubmitted:        { file: 'sounds/voice/fox_chore_submitted.mp3',        volume: 0.9, cooldown: 4000 },
+  pandaZeroViolation:       { file: 'sounds/voice/panda_zero_violation.mp3',       volume: 0.9, cooldown: 30*60*1000, persist: true },
+  pandaViolationRecord:     { file: 'sounds/voice/panda_violation_record.mp3',     volume: 0.9, cooldown: 4000 },
+  hedgehogBankWelcome:      { file: 'sounds/voice/hedgehog_bank_welcome.mp3',      volume: 0.9, cooldown: 30*60*1000, persist: true },
+  hedgehogWeeklyBalance:    { file: 'sounds/voice/hedgehog_weekly_balance.mp3',    volume: 0.9, cooldown: 4000 },
+  hedgehogSpendingReminder: { file: 'sounds/voice/hedgehog_spending_reminder.mp3', volume: 0.9, cooldown: 4000 },
+};
+const _voiceAssetPool = {};
+const _voiceLastPlayed = {};
+let _voiceQueue = [];
+let _voiceActiveKey = null;
+const VOICE_DUCK_FACTOR = 0.35; // Voice 播放時，BGM／Ambient 降到原音量的 35%
+const _duckableKeys = ['bgmDay', 'bgmNight', 'forestDayAmbience', 'restaurantAmbience', 'ambienceNightBugs'];
+
+function _voiceCooldownStorageKey(key) { return 'forest_voice_last_' + key; }
+
+function _voiceOnCooldown(key, cooldownMs, persist) {
+  const now = Date.now();
+  if (persist) {
+    let last = 0;
+    try { last = Number(localStorage.getItem(_voiceCooldownStorageKey(key)) || 0); } catch(e) {}
+    return (now - last) < cooldownMs;
+  }
+  return (now - (_voiceLastPlayed[key] || 0)) < cooldownMs;
+}
+function _voiceMarkPlayed(key, persist) {
+  const now = Date.now();
+  _voiceLastPlayed[key] = now;
+  if (persist) {
+    try { localStorage.setItem(_voiceCooldownStorageKey(key), String(now)); } catch(e) {}
+  }
+}
+
+function _duckBackgroundAudio(duck) {
+  _duckableKeys.forEach(key => {
+    const audio = _audioAssetPool[key];
+    const track = AUDIO_ASSETS_MIN[key];
+    if (!audio || !track) return;
+    try { audio.volume = duck ? track.volume * VOICE_DUCK_FACTOR : track.volume; } catch(e) {}
+  });
+}
+
+// 唯一的語音播放入口：安靜模式／Voice 關閉／冷卻中都會安靜跳過，不拋錯、不中斷呼叫端
+function playVoiceAsset(key) {
+  try {
+    if (isQuietModeOn() || !isVoiceEnabled()) return;
+    const def = VOICE_ASSETS[key];
+    if (!def) return;
+    if (_voiceOnCooldown(key, def.cooldown, def.persist)) return;
+    _voiceMarkPlayed(key, def.persist);
+    _enqueueVoice(key);
+  } catch(e) {
+    // 語音播放異常不得中斷呼叫端（訂單/家事/違規流程）
+  }
+}
+
+function _enqueueVoice(key) {
+  if (_voiceActiveKey) { _voiceQueue.push(key); return; } // 同時間只能播一段 Voice，其餘排隊
+  _startVoice(key);
+}
+
+function _startVoice(key) {
+  const def = VOICE_ASSETS[key];
+  if (!def) { _onVoiceEnded(); return; }
+  let audio = _voiceAssetPool[key];
+  if (!audio) { audio = new Audio(def.file); _voiceAssetPool[key] = audio; }
+  audio.volume = def.volume;
+  _voiceActiveKey = key;
+  _duckBackgroundAudio(true);
+  audio.currentTime = 0;
+  audio.onended = _onVoiceEnded;
+  audio.onerror = () => {
+    console.warn('[playVoiceAsset] 語音載入失敗（不影響操作）：' + def.file);
+    _onVoiceEnded();
+  };
+  audio.play().catch(() => {
+    console.warn('[playVoiceAsset] 語音播放被瀏覽器阻擋或失敗（不影響操作）：' + def.file);
+    _onVoiceEnded();
+  });
+}
+
+// 結束／載入失敗／播放被拒絕都會呼叫這裡，確保 Ducking 一定恢復、佇列一定會繼續，不會卡死
+function _onVoiceEnded() {
+  _voiceActiveKey = null;
+  _duckBackgroundAudio(false);
+  const next = _voiceQueue.shift();
+  if (next) _startVoice(next);
+}
+
+// ── 熊貓違規事件：whistle_short.mp3 → 約 200ms → panda_violation_record.mp3，統一走這一個入口 ──
+// 只用在「違規紀錄成功送出」；不用在既有 renderPenaltyList() 檢視頁面的 playWhistle() 提示音。
+let _pandaSequenceTimer = null;
+function playPandaViolationSequence() {
+  if (isQuietModeOn()) return;
+  playAudioAsset('sfxWhistle');
+  if (_pandaSequenceTimer) clearTimeout(_pandaSequenceTimer);
+  _pandaSequenceTimer = setTimeout(() => {
+    _pandaSequenceTimer = null;
+    playVoiceAsset('pandaViolationRecord');
+  }, 200);
+}
+
+// 切頁／切分頁時呼叫：取消尚未播放的哨音→語音序列，以及還在排隊、尚未真正開始播放的 Voice。
+// 不影響「目前正在播放中」的 Voice，那不是「延遲中」的語音。
+function cancelPendingVoiceSequence() {
+  if (_pandaSequenceTimer) { clearTimeout(_pandaSequenceTimer); _pandaSequenceTimer = null; }
+  _voiceQueue = [];
+}
+
+// ── 安靜模式：暫停 Voice／BGM／SFX／Ambient；關閉後依使用者原有的分類設定各自恢復 ──
+function setQuietMode(enabled) {
+  _writeAudioFlag(AUDIO_CATEGORY_KEY.quiet, enabled);
+  if (enabled) {
+    cancelPendingVoiceSequence();
+    if (_voiceActiveKey) {
+      try { const a = _voiceAssetPool[_voiceActiveKey]; a && a.pause(); } catch(e) {}
+      _voiceActiveKey = null;
+    }
+    _duckBackgroundAudio(false); // 重設音量標記，避免安靜模式關閉後卡在降音狀態
+    _stopAllAmbientAndBgm();
+  } else {
+    updateBackgroundAudio(true); // 依 Ambient／BGM 各自現有的開關設定重新套用，不強制全部打開
+  }
+}
+
+function setVoiceEnabledPref(enabled) {
+  _writeAudioFlag(AUDIO_CATEGORY_KEY.voice, enabled);
+  if (!enabled) {
+    cancelPendingVoiceSequence();
+    if (_voiceActiveKey) {
+      try { const a = _voiceAssetPool[_voiceActiveKey]; a && a.pause(); } catch(e) {}
+      _voiceActiveKey = null;
+      _duckBackgroundAudio(false);
+    }
+  }
+}
+
+// ── Audio 設定面板（沿用既有 .modal-overlay／.modal-box 樣式，不另建整個設定頁） ──
+function openAudioSettings() {
+  renderAudioSettingsPanel();
+  document.getElementById('audio-settings-modal').classList.add('open');
+}
+function closeAudioSettings() {
+  document.getElementById('audio-settings-modal').classList.remove('open');
+}
+function _audioToggleRow(label, checked, onToggleFnName) {
+  return `<div class="audio-toggle-row">
+    <span class="audio-toggle-label">${label}</span>
+    <button class="audio-toggle-btn${checked ? ' on' : ''}" onclick="${onToggleFnName}(this)">${checked ? '開' : '關'}</button>
+  </div>`;
+}
+function renderAudioSettingsPanel() {
+  const rows = document.getElementById('audio-settings-rows');
+  if (!rows) return;
+  rows.innerHTML =
+    _audioToggleRow('🔊 音效', isSfxEnabled(), 'onToggleSfx') +
+    _audioToggleRow('🗣️ 角色語音', isVoiceEnabled(), 'onToggleVoice') +
+    _audioToggleRow('🎵 背景音樂', isBackgroundMusicEnabled(), 'onToggleBgm') +
+    _audioToggleRow('🔕 安靜模式', isQuietModeOn(), 'onToggleQuiet');
+}
+function onToggleSfx(btn) {
+  const next = !isSfxEnabled();
+  setSfxEnabled(next);
+  btn.textContent = next ? '開' : '關';
+  btn.classList.toggle('on', next);
+}
+function onToggleVoice(btn) {
+  const next = !isVoiceEnabled();
+  setVoiceEnabledPref(next);
+  btn.textContent = next ? '開' : '關';
+  btn.classList.toggle('on', next);
+}
+function onToggleBgm(btn) {
+  const next = !isBackgroundMusicEnabled();
+  setBackgroundMusicEnabled(next);
+  btn.textContent = next ? '開' : '關';
+  btn.classList.toggle('on', next);
+}
+function onToggleQuiet(btn) {
+  const next = !isQuietModeOn();
+  setQuietMode(next);
+  btn.textContent = next ? '開' : '關';
+  btn.classList.toggle('on', next);
 }
 
 // ── BEAR CHEF SVG ──
@@ -3963,6 +4259,7 @@ async function enterRestaurant() {
   updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
   playAudioAsset('welcomeEnter');
+  playVoiceAsset('bearRestaurantWelcome'); // Audio UX v1.0：熊大廚固定歡迎語音，30 分鐘持久化 Cooldown 防止 F5／重複進入重播
 
   const wp = document.getElementById('welcome-page');
   wp.classList.add('fade-out');
