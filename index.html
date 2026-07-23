@@ -195,6 +195,44 @@ body {
   min-width:44px;
 }
 .audio-toggle-btn.on { background:var(--mint); color:white; }
+/* 音量滑桿：明確自訂 track/thumb 樣式，不依賴瀏覽器預設 range 外觀。
+   iPad/iOS Safari 在全域 box-sizing/margin/padding reset 之下，原生 range 有時會出現
+   thumb 視覺位置跟實際可拖動熱區對不上、看起來「拖不動」的問題，自訂大顆 thumb 可以避免。 */
+.audio-toggle-row input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  background: transparent;
+  touch-action: manipulation;
+}
+.audio-toggle-row input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 50px;
+  background: #e8d5c4;
+}
+.audio-toggle-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px; height: 26px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: var(--mango);
+  border: 2px solid var(--cocoa);
+  cursor: pointer;
+}
+.audio-toggle-row input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 50px;
+  background: #e8d5c4;
+}
+.audio-toggle-row input[type="range"]::-moz-range-thumb {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--mango);
+  border: 2px solid var(--cocoa);
+  cursor: pointer;
+}
 .order-item {
   display:flex; align-items:center; gap:10px; padding: 10px 0;
   border-bottom: 2px dashed #ecdcc8;
@@ -2039,16 +2077,23 @@ function renderPenaltyList(data) {
 
   // Audio UX v1.0：只要今天有違規紀錄，進入/刷新此分頁就播 whistle_short → 約200ms → panda_violation_record，
   // 取代原本的簡易合成哨音。這裡額外用一個獨立的 30 分鐘持久化 Cooldown（跟送出扣款當下的動作型
-  // Cooldown 分開），避免孩子端 30 秒定時刷新或反覆切回這頁時無限重播。
+  // Cooldown 分開），避免孩子端 30 秒定時刷新或反覆切回這頁時無限重播。Cooldown 要等哨音真的開始
+  // 播放才寫入；如果被 iPad/Safari 等瀏覽器擋下，不算數，下次進頁仍可以馬上重試。
   if (todayOnlyPenalties.length > 0 && !_pandaViolationViewOnCooldown()) {
-    _markPandaViolationViewPlayed();
-    playPandaViolationSequence();
+    playPandaViolationSequence().then(started => { if (started) _markPandaViolationViewPlayed(); });
   }
 
   countEl.textContent = todayPenalties.length + ' 項';
 
   // 熊貓教官動態台詞（依今天的違規數量判斷）
-  const weekStart = (() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - (d.getDay()===0?6:d.getDay()-1)); return d; })();
+  // 星期幾明確用台灣時區判斷（跟 getTaipeiTodayStr() 同一套時區來源），避免裝置本地時區跟
+  // 台灣不一致時，本週起點算錯，連帶讓「本週零違規」語音判斷出錯；當天 00:00 的時間點本身
+  // 仍沿用跟 created_at 一致的本地時間表示法。
+  const weekStart = (() => {
+    const d = new Date(); d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - (_taipeiDow(new Date())===0?6:_taipeiDow(new Date())-1));
+    return d;
+  })();
   const weekPenalties = (data.penalties || []).filter(p => {
     const d = parseCoinDate ? parseCoinDate(p.created_at) : new Date(String(p.created_at).replace(' ','T'));
     return d && d >= weekStart;
@@ -2089,6 +2134,14 @@ function getTaipeiTodayStr() {
   const mo = parts.find(p => p.type==='month').value;
   const d = parts.find(p => p.type==='day').value;
   return `${y}-${mo}-${d}`;
+}
+
+// 明確用台灣時區判斷「星期幾」（0=週日...6=週六），不依賴裝置本地時區設定，
+// 跟 getTaipeiTodayStr() 共用同一套時區來源，供「本週」判斷共同使用。
+function _taipeiDow(date) {
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', weekday: 'short' }).format(date);
+  const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[wd] ?? date.getDay();
 }
 
 // 從 created_at 字串（格式如 "2026/06/21 14:30"）取出日期部分，統一成 yyyy-MM-dd 以便比較
@@ -3813,16 +3866,19 @@ const AUDIO_ASSETS_MIN = {
 const _audioAssetPool = {};
 const _audioAssetLastPlayed = {};
 const _audioAssetWarned = new Set();
+// 回傳值：Promise，一律 resolve（不會 reject，避免呼叫端沒接 .catch() 時出現未捕捉的 Promise 錯誤），
+// resolve(true) 代表這次真的成功開始播放；resolve(false) 代表被開關/冷卻/瀏覽器擋下或載入失敗。
+// Cooldown 只在真正播放成功後才寫入，iPad/Safari 等瀏覽器阻擋播放時不會消耗掉這次 Cooldown 額度。
 function playAudioAsset(key) {
   try {
     const track = AUDIO_ASSETS_MIN[key];
-    if (!track) return; // 找不到設定，安靜跳過，不報錯
-    if (isQuietModeOn()) return; // 安靜模式：Ambient／BGM／SFX 全部暫停
-    if (track.category === 'ambient' && !isAmbientEnabled()) return;
-    if (track.category === 'bgm' && !isBackgroundMusicEnabled()) return;
-    if (track.category === 'sfx' && !isSfxEnabled()) return;
+    if (!track) return Promise.resolve(false); // 找不到設定，安靜跳過，不報錯
+    if (isQuietModeOn()) return Promise.resolve(false); // 安靜模式：Ambient／BGM／SFX 全部暫停
+    if (track.category === 'ambient' && !isAmbientEnabled()) return Promise.resolve(false);
+    if (track.category === 'bgm' && !isBackgroundMusicEnabled()) return Promise.resolve(false);
+    if (track.category === 'sfx' && !isSfxEnabled()) return Promise.resolve(false);
     const now = Date.now();
-    if (now - (_audioAssetLastPlayed[key] || 0) < track.cooldown) return; // 冷卻中，安靜跳過
+    if (now - (_audioAssetLastPlayed[key] || 0) < track.cooldown) return Promise.resolve(false); // 冷卻中，安靜跳過
     let audio = _audioAssetPool[key];
     if (!audio) { audio = new Audio(); _audioAssetPool[key] = audio; }
     // loop 素材的幂等保護：同一路徑已經在播放就直接跳過，不重設 src／currentTime／play()，
@@ -3833,9 +3889,8 @@ function playAudioAsset(key) {
     let targetSrc = '';
     if (track.loop) {
       targetSrc = new URL(track.file, window.location.href).href;
-      if (audio.src === targetSrc && !audio.paused) return;
+      if (audio.src === targetSrc && !audio.paused) return Promise.resolve(true); // loop 已經在播放中，視為這個素材目前是播放狀態
     }
-    _audioAssetLastPlayed[key] = now;
     if (!track.loop || audio.src !== targetSrc) {
       audio.src = track.file;
     }
@@ -3846,13 +3901,21 @@ function playAudioAsset(key) {
       _audioAssetWarned.add(key);
       console.warn('[playAudioAsset] 音效載入失敗（不影響操作）：' + track.file);
     };
-    audio.play().catch(() => {
-      if (_audioAssetWarned.has(key)) return;
-      _audioAssetWarned.add(key);
-      console.warn('[playAudioAsset] 播放被瀏覽器阻擋或失敗（不影響操作）：' + track.file);
-    });
+    const markPlayed = () => { _audioAssetLastPlayed[key] = Date.now(); return true; };
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === 'function') {
+      return playPromise.then(markPlayed).catch(() => {
+        if (!_audioAssetWarned.has(key)) {
+          _audioAssetWarned.add(key);
+          console.warn('[playAudioAsset] 播放被瀏覽器阻擋或失敗（不影響操作）：' + track.file);
+        }
+        return false; // 沒有真正播放成功，不寫入 Cooldown
+      });
+    }
+    return Promise.resolve(markPlayed());
   } catch(e) {
     // 任何非預期錯誤都不能讓呼叫端（submitOrder）中斷
+    return Promise.resolve(false);
   }
 }
 
@@ -4019,14 +4082,18 @@ function _reapplyCategoryVolume(category) {
   });
 }
 
-// 唯一的語音播放入口：安靜模式／Voice 關閉／冷卻中都會安靜跳過，不拋錯、不中斷呼叫端
+// 唯一的語音播放入口：安靜模式／Voice 關閉／冷卻中都會安靜跳過，不拋錯、不中斷呼叫端。
+// _voicePlayAttemptInFlight：同一句在「已排入佇列／正在嘗試播放，但還不知道是否真的成功」
+// 這段期間，避免連點或短時間內重入又再排一次；播放成功或失敗都會清掉這個標記。
+const _voicePlayAttemptInFlight = new Set();
 function playVoiceAsset(key) {
   try {
     if (isQuietModeOn() || !isVoiceEnabled()) return;
     const def = VOICE_ASSETS[key];
     if (!def) return;
     if (_voiceOnCooldown(key, def.cooldown, def.persist)) return;
-    _voiceMarkPlayed(key, def.persist);
+    if (_voicePlayAttemptInFlight.has(key)) return;
+    _voicePlayAttemptInFlight.add(key);
     _enqueueVoice(key);
   } catch(e) {
     // 語音播放異常不得中斷呼叫端（訂單/家事/違規流程）
@@ -4040,7 +4107,7 @@ function _enqueueVoice(key) {
 
 function _startVoice(key) {
   const def = VOICE_ASSETS[key];
-  if (!def) { _onVoiceEnded(); return; }
+  if (!def) { _voicePlayAttemptInFlight.delete(key); _onVoiceEnded(); return; }
   let audio = _voiceAssetPool[key];
   if (!audio) { audio = new Audio(def.file); _voiceAssetPool[key] = audio; }
   audio.volume = def.volume * getCategoryVolume('voice');
@@ -4050,12 +4117,20 @@ function _startVoice(key) {
   audio.onended = _onVoiceEnded;
   audio.onerror = () => {
     console.warn('[playVoiceAsset] 語音載入失敗（不影響操作）：' + def.file);
+    _voicePlayAttemptInFlight.delete(key);
     _onVoiceEnded();
   };
-  audio.play().catch(() => {
-    console.warn('[playVoiceAsset] 語音播放被瀏覽器阻擋或失敗（不影響操作）：' + def.file);
-    _onVoiceEnded();
-  });
+  const playPromise = audio.play();
+  const markStarted = () => { _voiceMarkPlayed(key, def.persist); _voicePlayAttemptInFlight.delete(key); };
+  if (playPromise && typeof playPromise.then === 'function') {
+    playPromise.then(markStarted).catch(() => {
+      console.warn('[playVoiceAsset] 語音播放被瀏覽器阻擋或失敗（不影響操作）：' + def.file);
+      _voicePlayAttemptInFlight.delete(key); // 沒有真正播放成功，不寫入 Cooldown，讓下一次呼叫可以馬上重試
+      _onVoiceEnded();
+    });
+  } else {
+    markStarted();
+  }
 }
 
 // 結束／載入失敗／播放被拒絕都會呼叫這裡，確保 Ducking 一定恢復、佇列一定會繼續，不會卡死
@@ -4069,14 +4144,17 @@ function _onVoiceEnded() {
 // ── 熊貓違規事件：whistle_short.mp3 → 約 200ms → panda_violation_record.mp3，統一走這一個入口 ──
 // 用在兩個情境：媽媽端「違規紀錄成功送出」，以及孩子端「進入/刷新違規頁且今天已有違規」。
 let _pandaSequenceTimer = null;
+// 回傳哨音的播放結果 Promise（一律 resolve，見 playAudioAsset），呼叫端可以用它判斷「這次的哨音
+// 是否真的開始播放」，藉此決定自己那一份 Cooldown 要不要寫入（例如孩子端的檢視頁 Cooldown）。
 function playPandaViolationSequence() {
-  if (isQuietModeOn()) return;
-  playAudioAsset('sfxWhistle');
+  if (isQuietModeOn()) return Promise.resolve(false);
+  const whistleStarted = playAudioAsset('sfxWhistle');
   if (_pandaSequenceTimer) clearTimeout(_pandaSequenceTimer);
   _pandaSequenceTimer = setTimeout(() => {
     _pandaSequenceTimer = null;
     playVoiceAsset('pandaViolationRecord');
   }, 200);
+  return whistleStarted;
 }
 
 // 孩子端「檢視違規頁」這個觸發點獨立計算冷卻，跟送出扣款當下的動作型 Cooldown 分開，
@@ -4089,6 +4167,35 @@ function _pandaViolationViewOnCooldown() {
 }
 function _markPandaViolationViewPlayed() {
   try { localStorage.setItem('forest_voice_last_pandaViolationView', String(Date.now())); } catch(e) {}
+}
+
+// ── 行動瀏覽器音訊解鎖 ──
+// iOS Safari 等瀏覽器只承認「使用者手勢當下、同步繼續」的 play() 呼叫；setTimeout 延遲
+// （熊貓 whistle→200ms→語音序列）、await fetch() 之後（訂單/家事送出語音）、30 秒定時
+// 刷新（週結算語音、孩子端違規頁）都不算，第一次在這些情境播放很容易被安靜擋下。
+// 這裡在真正的使用者手勢（進入餐館點擊）當下，把所有音檔都靜音播放＋立刻暫停一次，
+// 讓瀏覽器把這些 <audio> 元素標記為已解鎖，之後不論從哪個情境播放都不會再被擋。
+function _primeAudioForMobileAutoplay() {
+  const prime = (key, def, pool) => {
+    try {
+      let audio = pool[key];
+      if (!audio) { audio = new Audio(def.file); pool[key] = audio; }
+      const restoreVolume = audio.volume;
+      audio.volume = 0;
+      const p = audio.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => { audio.pause(); audio.currentTime = 0; audio.volume = restoreVolume; })
+         .catch(() => { audio.volume = restoreVolume; }); // 仍被擋也不影響後續正常播放嘗試，安靜忽略
+      } else {
+        audio.pause(); audio.currentTime = 0; audio.volume = restoreVolume;
+      }
+    } catch(e) {}
+  };
+  // 只解鎖真正會從 setTimeout／await fetch() 之後才第一次播放的資產，不含 BGM／Ambient
+  // （那些已經在 updateBackgroundAudio(true) 裡、同一個使用者手勢當下直接播放過，不需要重複解鎖），
+  // 也不含一般同步觸發的 UI 音效，避免一次觸發過多同時播放請求。
+  ['sfxWhistle', 'orderSuccess'].forEach(key => prime(key, AUDIO_ASSETS_MIN[key], _audioAssetPool));
+  Object.keys(VOICE_ASSETS).forEach(key => prime(key, VOICE_ASSETS[key], _voiceAssetPool));
 }
 
 // 切頁／切分頁時呼叫：取消尚未播放的哨音→語音序列，以及還在排隊、尚未真正開始播放的 Voice。
@@ -4329,6 +4436,7 @@ function pandaOfficerSVG(size=72) {
 // ── WELCOME PAGE ──
 async function enterRestaurant() {
   try { await Tone.start(); } catch(e) {}
+  _primeAudioForMobileAutoplay(); // iOS Safari 等行動瀏覽器會擋「setTimeout／await 之後才第一次 play() 的音檔」，這裡在真正的使用者手勢當下先靜音解鎖一次
   _hasEnteredRestaurant = true;
   updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
