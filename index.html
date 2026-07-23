@@ -2037,9 +2037,12 @@ function renderPenaltyList(data) {
     return !isNaN(d.getTime()) && d.getTime() >= threeDaysAgoMs;
   });
 
-  // 只要今天有違規紀錄，每次進入/刷新此分頁都播放哨子提示音
-  if (todayOnlyPenalties.length > 0) {
-    playWhistle();
+  // Audio UX v1.0：只要今天有違規紀錄，進入/刷新此分頁就播 whistle_short → 約200ms → panda_violation_record，
+  // 取代原本的簡易合成哨音。這裡額外用一個獨立的 30 分鐘持久化 Cooldown（跟送出扣款當下的動作型
+  // Cooldown 分開），避免孩子端 30 秒定時刷新或反覆切回這頁時無限重播。
+  if (todayOnlyPenalties.length > 0 && !_pandaViolationViewOnCooldown()) {
+    _markPandaViolationViewPlayed();
+    playPandaViolationSequence();
   }
 
   countEl.textContent = todayPenalties.length + ' 項';
@@ -3766,6 +3769,21 @@ function isVoiceEnabled()            { return _readAudioFlag(AUDIO_CATEGORY_KEY.
 function isSfxEnabled()              { return _readAudioFlag(AUDIO_CATEGORY_KEY.sfx, true); }
 function isQuietModeOn()             { return _readAudioFlag(AUDIO_CATEGORY_KEY.quiet, false); }
 
+// ── 分類音量（0～100%）：只給 sfx／voice／bgm 三類提供滑桿，Ambient 沒有專屬控制，
+// 永遠回傳 100%（沒有存過值），維持「Ambient 不受其他音樂/音效開關與音量影響」的既有原則 ──
+function getCategoryVolume(category) {
+  try {
+    const v = localStorage.getItem('forest_audio_volume_' + category);
+    if (v === null) return 1.0;
+    const n = Number(v);
+    if (!isFinite(n)) return 1.0;
+    return Math.max(0, Math.min(100, n)) / 100;
+  } catch(e) { return 1.0; }
+}
+function setCategoryVolume(category, percent) {
+  try { localStorage.setItem('forest_audio_volume_' + category, String(Math.max(0, Math.min(100, Number(percent) || 0)))); } catch(e) {}
+}
+
 // ── playAudioAsset()：第一階段最小獨立音訊層 ──
 // 刻意不依賴任何更大的音訊/語音架構，只做「播放一個固定音檔、缺檔或播放失敗時安靜
 // 降級、不中斷呼叫端」這一件事。之後若要接上完整架構，只需要把呼叫端換掉，這支函式
@@ -3821,7 +3839,7 @@ function playAudioAsset(key) {
     if (!track.loop || audio.src !== targetSrc) {
       audio.src = track.file;
     }
-    audio.volume = track.volume;
+    audio.volume = track.volume * getCategoryVolume(track.category); // Ambient 分類沒有存過值，乘 1.0 等於不變
     audio.loop = !!track.loop;
     audio.onerror = () => {
       if (_audioAssetWarned.has(key)) return;
@@ -3974,7 +3992,30 @@ function _duckBackgroundAudio(duck) {
     const audio = _audioAssetPool[key];
     const track = AUDIO_ASSETS_MIN[key];
     if (!audio || !track) return;
-    try { audio.volume = duck ? track.volume * VOICE_DUCK_FACTOR : track.volume; } catch(e) {}
+    const base = track.volume * getCategoryVolume(track.category);
+    try { audio.volume = duck ? base * VOICE_DUCK_FACTOR : base; } catch(e) {}
+  });
+}
+
+// 音量滑桿即時生效：正在播放中的資產（BGM／Ambient／目前這句 Voice）立刻套用新音量，
+// 不用等下一次 play() 才生效。
+function _reapplyCategoryVolume(category) {
+  if (category === 'voice') {
+    if (_voiceActiveKey) {
+      const audio = _voiceAssetPool[_voiceActiveKey];
+      const def = VOICE_ASSETS[_voiceActiveKey];
+      if (audio && def) { try { audio.volume = def.volume * getCategoryVolume('voice'); } catch(e) {} }
+    }
+    return;
+  }
+  Object.keys(AUDIO_ASSETS_MIN).forEach(key => {
+    const track = AUDIO_ASSETS_MIN[key];
+    if (track.category !== category) return;
+    const audio = _audioAssetPool[key];
+    if (!audio) return;
+    const base = track.volume * getCategoryVolume(category);
+    const ducked = _duckableKeys.includes(key) && !!_voiceActiveKey;
+    try { audio.volume = ducked ? base * VOICE_DUCK_FACTOR : base; } catch(e) {}
   });
 }
 
@@ -4002,7 +4043,7 @@ function _startVoice(key) {
   if (!def) { _onVoiceEnded(); return; }
   let audio = _voiceAssetPool[key];
   if (!audio) { audio = new Audio(def.file); _voiceAssetPool[key] = audio; }
-  audio.volume = def.volume;
+  audio.volume = def.volume * getCategoryVolume('voice');
   _voiceActiveKey = key;
   _duckBackgroundAudio(true);
   audio.currentTime = 0;
@@ -4026,7 +4067,7 @@ function _onVoiceEnded() {
 }
 
 // ── 熊貓違規事件：whistle_short.mp3 → 約 200ms → panda_violation_record.mp3，統一走這一個入口 ──
-// 只用在「違規紀錄成功送出」；不用在既有 renderPenaltyList() 檢視頁面的 playWhistle() 提示音。
+// 用在兩個情境：媽媽端「違規紀錄成功送出」，以及孩子端「進入/刷新違規頁且今天已有違規」。
 let _pandaSequenceTimer = null;
 function playPandaViolationSequence() {
   if (isQuietModeOn()) return;
@@ -4036,6 +4077,18 @@ function playPandaViolationSequence() {
     _pandaSequenceTimer = null;
     playVoiceAsset('pandaViolationRecord');
   }, 200);
+}
+
+// 孩子端「檢視違規頁」這個觸發點獨立計算冷卻，跟送出扣款當下的動作型 Cooldown 分開，
+// 用持久化（localStorage）避免 30 秒定時刷新或短時間內反覆切回這頁造成無限重播。
+const PANDA_VIOLATION_VIEW_COOLDOWN_MS = 30 * 60 * 1000;
+function _pandaViolationViewOnCooldown() {
+  let last = 0;
+  try { last = Number(localStorage.getItem('forest_voice_last_pandaViolationView') || 0); } catch(e) {}
+  return (Date.now() - last) < PANDA_VIOLATION_VIEW_COOLDOWN_MS;
+}
+function _markPandaViolationViewPlayed() {
+  try { localStorage.setItem('forest_voice_last_pandaViolationView', String(Date.now())); } catch(e) {}
 }
 
 // 切頁／切分頁時呼叫：取消尚未播放的哨音→語音序列，以及還在排隊、尚未真正開始播放的 Voice。
@@ -4087,13 +4140,34 @@ function _audioToggleRow(label, checked, onToggleFnName) {
     <button class="audio-toggle-btn${checked ? ' on' : ''}" onclick="${onToggleFnName}(this)">${checked ? '開' : '關'}</button>
   </div>`;
 }
+// Ambient 不提供音量滑桿，維持不受其他音效/音樂設定影響的既有原則
+function _audioSliderRow(label, category) {
+  const pct = Math.round(getCategoryVolume(category) * 100);
+  return `<div class="audio-toggle-row" style="flex-direction:column;align-items:stretch;gap:6px;">
+    <div style="display:flex;justify-content:space-between;">
+      <span class="audio-toggle-label" style="font-size:12px;color:var(--cocoa-soft);">${label}</span>
+      <span style="font-size:12px;color:var(--cocoa-soft);" id="audio-vol-value-${category}">${pct}%</span>
+    </div>
+    <input type="range" min="0" max="100" value="${pct}" oninput="onAudioVolumeInput('${category}', this.value)" style="width:100%;">
+  </div>`;
+}
+function onAudioVolumeInput(category, value) {
+  const pct = Number(value);
+  setCategoryVolume(category, pct);
+  const label = document.getElementById('audio-vol-value-' + category);
+  if (label) label.textContent = pct + '%';
+  _reapplyCategoryVolume(category);
+}
 function renderAudioSettingsPanel() {
   const rows = document.getElementById('audio-settings-rows');
   if (!rows) return;
   rows.innerHTML =
     _audioToggleRow('🔊 音效', isSfxEnabled(), 'onToggleSfx') +
+    _audioSliderRow('音效音量', 'sfx') +
     _audioToggleRow('🗣️ 角色語音', isVoiceEnabled(), 'onToggleVoice') +
+    _audioSliderRow('語音音量', 'voice') +
     _audioToggleRow('🎵 背景音樂', isBackgroundMusicEnabled(), 'onToggleBgm') +
+    _audioSliderRow('音樂音量', 'bgm') +
     _audioToggleRow('🔕 安靜模式', isQuietModeOn(), 'onToggleQuiet');
 }
 function onToggleSfx(btn) {
