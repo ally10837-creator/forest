@@ -166,6 +166,57 @@ body {
   display:flex; align-items:center; justify-content:center; padding: 0 4px;
 }
 
+/* ── BIRTHDAY FAB（生日當天重新開啟卡片的入口，避免關掉卡片後真的錯過禮物）── */
+.birthday-fab {
+  position: absolute; bottom: 24px; left: 20px; z-index:150;
+  background: var(--mango); color:var(--cocoa); border:2px solid var(--cocoa); border-radius: 50px;
+  padding: 10px 16px; font-family:inherit; font-size:14px; font-weight:800;
+  cursor:pointer; box-shadow: var(--shadow); display:none; align-items:center; gap:6px;
+  transition: transform 0.15s;
+}
+.birthday-fab:active { transform: scale(0.95); }
+@media (prefers-reduced-motion: no-preference) {
+  .birthday-fab { animation: birthdayFabBob 1.4s ease-in-out infinite; }
+}
+@keyframes birthdayFabBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+
+/* ── BIRTHDAY CARD MODAL ── */
+.birthday-modal {
+  position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:900;
+  display:flex; align-items:center; justify-content:center; padding:20px;
+}
+.birthday-box {
+  background:var(--cream); border:3px solid var(--cocoa); border-radius:20px;
+  padding:24px 20px; max-width:320px; width:100%; max-height:90vh; overflow-y:auto;
+  box-shadow:5px 5px 0 var(--cocoa); text-align:center;
+}
+.birthday-envelope {
+  font-size:64px; cursor:pointer; user-select:none;
+  animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
+}
+.birthday-envelope.no-anim { animation:none; }
+.birthday-content { display:none; }
+.birthday-content.open { display:block; animation: birthdayCardOpen 0.45s ease-out; }
+@keyframes birthdayEnvelopeBob {
+  0%,100% { transform:translateY(0) rotate(-2deg); }
+  50%     { transform:translateY(-6px) rotate(2deg); }
+}
+@keyframes birthdayCardOpen {
+  from { transform:scale(0.7) rotate(-4deg); opacity:0; }
+  to   { transform:scale(1) rotate(0deg); opacity:1; }
+}
+.birthday-claim-btn {
+  width:100%; background:var(--mango); border:2px solid var(--cocoa); border-radius:12px;
+  padding:14px; font-family:inherit; font-size:16px; font-weight:800; cursor:pointer;
+  box-shadow:2px 2px 0 var(--cocoa);
+}
+.birthday-claim-btn:disabled { opacity:0.6; cursor:default; }
+@media (prefers-reduced-motion: reduce) {
+  .birthday-envelope { animation:none; }
+  .birthday-content.open { animation:none; }
+  .birthday-fab { animation:none; }
+}
+
 /* ── MODAL ── */
 .modal-overlay {
   position:absolute; inset:0; background:rgba(0,0,0,0.55); z-index:300;
@@ -964,6 +1015,8 @@ body {
 
   <!-- Cart FAB -->
   <button class="cart-fab" onclick="openCart()" id="cart-fab" style="display:none;">🐰 蔓蔓 的購物車 <span class="cart-count" id="cart-count">0</span></button>
+  <!-- Birthday FAB（候選版）：今天是目前這位孩子的生日才顯示，點了重新打開生日卡片 -->
+  <button class="birthday-fab" id="birthday-fab" onclick="openBirthdayCard(currentChild)" style="display:none;">🎂 生日禮物</button>
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
@@ -1517,9 +1570,11 @@ function hamsterSVG(size=36) {
   </svg>`;
 }
 
+// birthday 只存月/日（Ally 已確認可公開），不存出生年份——年份只存在後端 forest_gs.gs，
+// 用來計算「今天滿幾歲」，前端與公開原始碼完全不會出現出生年份本身。
 const MEMBERS = {
-  candice: { name:"蔓蔓", avatar:"🐰", accentClass:"candice", colorClass:"candice-col" },
-  harris:  { name:"昊昊", avatar:"🐹", accentClass:"harris",  colorClass:"harris-col"  }
+  candice: { name:"蔓蔓", avatar:"🐰", accentClass:"candice", colorClass:"candice-col", birthday:{month:10, day:29} },
+  harris:  { name:"昊昊", avatar:"🐹", accentClass:"harris",  colorClass:"harris-col",  birthday:{month:6,  day:23} }
 };
 
 function memberAvatar(id, size=36) {
@@ -1559,6 +1614,8 @@ async function switchChild(id) {
   document.getElementById('tab-candice').className = 'child-tab' + (id==='candice'?' active-candice':'');
   document.getElementById('tab-harris').className  = 'child-tab' + (id==='harris' ?' active-harris':'');
   updateCartFab(); // 切換後顯示該孩子自己的購物車數量
+  updateBirthdayFab(); // 切換後依新孩子重新判斷小蛋糕按鈕要不要顯示
+  maybeShowBirthdayCard(id); // 若切過去的孩子今天生日、且今天還沒關過卡片，個別觸發（不影響另一位孩子的狀態）
   renderSubTab(currentSubTab); // 先用現有資料立刻畫出畫面，避免空白等待
   await loadAll();             // 再重新抓取最新資料，三個頁籤（餐館/家事/我的訂單）一起同步更新
 }
@@ -2142,6 +2199,29 @@ function _taipeiDow(date) {
   const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', weekday: 'short' }).format(date);
   const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return map[wd] ?? date.getDay();
+}
+
+// ── 生日判斷（只比對月/日，不比對出生年份；出生年份只存在後端）──
+// 明確用 Asia/Taipei 時區，跟 getTaipeiTodayStr()/_taipeiDow() 同一套時區來源，
+// 不依賴裝置本地時區，避免孩子平板時區設定不同造成生日判斷偏移。
+function _taipeiMonthDay(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' }).formatToParts(now);
+  return {
+    month: Number(parts.find(p => p.type === 'month').value),
+    day:   Number(parts.find(p => p.type === 'day').value)
+  };
+}
+// window.__forestTestBirthdayChildId：本機測試專用覆寫，只影響「要不要顯示卡片」這個前端判斷，
+// 不影響後端 claimBirthdayReward() 的真實日期判斷——所以就算測試時強制顯示卡片，按下「收下禮物」
+// 送到後端還是會被判定 not_birthday，不會真的發放金幣。
+function isBirthdayToday(childId, now = new Date()) {
+  try {
+    if (typeof window !== 'undefined' && window.__forestTestBirthdayChildId === childId) return true;
+    const b = MEMBERS[childId] && MEMBERS[childId].birthday;
+    if (!b || !b.month || !b.day) return false; // 資料缺失安全跳過，不影響其他功能
+    const t = _taipeiMonthDay(now);
+    return t.month === b.month && t.day === b.day;
+  } catch(e) { return false; }
 }
 
 // 從 created_at 字串（格式如 "2026/06/21 14:30"）取出日期部分，統一成 yyyy-MM-dd 以便比較
@@ -3010,6 +3090,136 @@ function checkInterestNotification() {
 function closeInterestNotify() {
   const modal = document.getElementById('interest-notify-modal');
   if (modal) modal.remove();
+}
+
+// ── 生日卡片（候選版）──────────────────────────────────────────
+// 後端 claimBirthdayReward() 是「是否已領過200金幣」的唯一真實來源；這裡的 localStorage
+// 只用來記「今天這個孩子的卡片關掉了沒有」，純粹避免同一天反覆自動彈出，不是領取依據。
+function _birthdayCardDismissKey(childId) {
+  return `forest_birthday_card_dismissed_${childId}_${getTaipeiTodayStr()}`;
+}
+function _hasDismissedBirthdayCardToday(childId) {
+  try { return !!localStorage.getItem(_birthdayCardDismissKey(childId)); } catch(e) { return false; }
+}
+function _markBirthdayCardDismissedToday(childId) {
+  try { localStorage.setItem(_birthdayCardDismissKey(childId), '1'); } catch(e) {}
+}
+
+// enterRestaurant() 進入當下呼叫：今天是生日、且今天還沒關掉過卡片，才自動彈出。
+// 已經關掉過的話不會自動再跳，但下面的生日小蛋糕按鈕仍可以手動重新開啟，避免真的錯過禮物。
+function maybeShowBirthdayCard(childId) {
+  try {
+    if (!isBirthdayToday(childId)) return;
+    if (_hasDismissedBirthdayCardToday(childId)) return;
+    openBirthdayCard(childId);
+  } catch(e) { /* 生日卡片異常不得影響進入餐館流程 */ }
+}
+
+function openBirthdayCard(childId) {
+  try {
+    const m = MEMBERS[childId];
+    if (!m) return;
+    const existing = document.getElementById('birthday-modal');
+    if (existing) existing.remove();
+
+    const info = (allData[childId] && allData[childId].birthdayInfo) || {};
+    const age = (typeof info.age === 'number') ? info.age : null;
+    const alreadyClaimed = !!info.claimedThisYear;
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const ageLine = age != null
+      ? `<div style="font-size:15px;font-weight:800;color:var(--mango-dark);margin-bottom:6px;">🎂 ${rb(age + ' 歲生日快樂！')}</div>`
+      : '';
+    const claimArea = alreadyClaimed
+      ? `<div style="font-size:13px;color:var(--cocoa-soft);font-weight:700;margin-top:6px;">${rb('今年的生日禮物已經領取囉')} 💛</div>`
+      : `<button class="birthday-claim-btn" id="birthday-claim-btn" onclick="_claimBirthdayReward('${childId}')">${rb('收下生日禮物')} 🎁</button>`;
+
+    const modal = document.createElement('div');
+    modal.id = 'birthday-modal';
+    modal.className = 'birthday-modal';
+    modal.innerHTML = `
+      <div class="birthday-box">
+        <div class="birthday-envelope${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" onclick="_openBirthdayEnvelope('${childId}')">🎁</div>
+        <div class="birthday-content" id="birthday-content">
+          <div style="font-size:36px;margin-bottom:6px;">🎉🎈✨</div>
+          <div style="font-size:19px;font-weight:800;margin-bottom:6px;">${rb(m.name + ' 生日快樂！')}</div>
+          ${ageLine}
+          <div style="background:#fff4e0;border:2px solid var(--mango);border-radius:12px;padding:10px;font-size:14px;font-weight:700;margin:10px 0;">
+            🎁 ${rb('森林餐館送你')} <span style="color:var(--mango-dark);">200</span> ${rb('枚生日金幣')}
+          </div>
+          <div id="birthday-status-msg" style="font-size:13px;font-weight:700;margin-bottom:8px;"></div>
+          <div id="birthday-claim-area">${claimArea}</div>
+        </div>
+        <button style="margin-top:10px;background:none;border:none;color:var(--cocoa-soft);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="closeBirthdayCard('${childId}')">${rb('晚點再看')}</button>
+      </div>`;
+    document.body.appendChild(modal);
+
+    // reduce-motion：直接顯示展開後的卡片內容，不用再點信封
+    if (reduceMotion) {
+      document.getElementById('birthday-envelope').style.display = 'none';
+      document.getElementById('birthday-content').classList.add('open');
+    }
+  } catch(e) { /* 生日卡片異常不得影響進入餐館流程 */ }
+}
+
+// 生日拉炮紙花：沿用既有 burst() 粒子系統，改用多色（品牌色系）取代單色金幣光，做出紙花感。
+function _burstBirthdayConfetti() {
+  const colors = ['#ffb830', '#ff7f7f', '#52c49a', '#5bb8ff', '#e09600'];
+  colors.forEach(c => burst(16, c));
+}
+function _openBirthdayEnvelope(childId) {
+  const envelope = document.getElementById('birthday-envelope');
+  const content = document.getElementById('birthday-content');
+  if (!envelope || !content) return;
+  envelope.style.display = 'none';
+  content.classList.add('open');
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduceMotion) _burstBirthdayConfetti(); // 多色拉炮紙花，尊重減少動畫偏好時不放
+}
+
+function closeBirthdayCard(childId) {
+  if (childId) _markBirthdayCardDismissedToday(childId);
+  const modal = document.getElementById('birthday-modal');
+  if (modal) modal.remove();
+}
+
+// 按下「收下生日禮物」：立刻鎖住按鈕避免連點，只有後端明確回傳 claimed 才算成功、才更新畫面。
+const _BIRTHDAY_CLAIM_BTN_LABEL = () => rb('收下生日禮物') + ' 🎁'; // rb() 回傳的是HTML，統一用innerHTML賦值
+async function _claimBirthdayReward(childId) {
+  const btn = document.getElementById('birthday-claim-btn');
+  const statusEl = document.getElementById('birthday-status-msg');
+  if (btn) { btn.disabled = true; btn.innerHTML = rb('處理中') + '...🎁'; }
+  try {
+    const res = await fetch(`${API}?action=claimBirthdayReward&childId=${encodeURIComponent(childId)}`);
+    const data = await res.json();
+    const claimArea = document.getElementById('birthday-claim-area');
+    if (data.status === 'claimed') {
+      if (allData[childId]) allData[childId].balance = data.newBalance;
+      updateBalanceDisplay();
+      if (claimArea) claimArea.innerHTML = `<div style="font-size:14px;font-weight:800;color:var(--mint);">✅ ${rb('已加入 200 枚生日金幣！')}</div>`;
+      playAudioAsset('coin');
+      burst(100, '#ffb830');
+    } else if (data.status === 'already_claimed') {
+      if (claimArea) claimArea.innerHTML = `<div style="font-size:13px;color:var(--cocoa-soft);font-weight:700;">${rb('今年的生日禮物已經領取囉')} 💛</div>`;
+    } else if (data.status === 'not_birthday') {
+      // 測試模式強制顯示卡片、但今天其實不是生日時會走這條分支，不算錯誤，安靜提示即可
+      if (statusEl) statusEl.innerHTML = rb('（測試模式：今天不是真的生日，不會發放金幣）');
+      if (btn) { btn.disabled = false; btn.innerHTML = _BIRTHDAY_CLAIM_BTN_LABEL(); }
+    } else {
+      if (statusEl) statusEl.textContent = '⚠️ ' + (data.error || '處理失敗，請稍後再試'); // data.error 是後端純文字訊息，不含注音HTML，用textContent即可
+      if (btn) { btn.disabled = false; btn.innerHTML = _BIRTHDAY_CLAIM_BTN_LABEL(); } // 失敗可安全重試
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠️ 網路錯誤，請稍後再試';
+    if (btn) { btn.disabled = false; btn.innerHTML = _BIRTHDAY_CLAIM_BTN_LABEL(); }
+  }
+}
+
+// 小蛋糕重新開啟入口：今天是生日就顯示，讓使用者關掉卡片後仍能再次打開，不會真的錯過禮物
+function updateBirthdayFab() {
+  const fab = document.getElementById('birthday-fab');
+  if (!fab) return;
+  fab.style.display = isBirthdayToday(currentChild) ? 'flex' : 'none';
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -4003,52 +4213,45 @@ function setBackgroundMusicEnabled(enabled) {
 }
 
 // ── Audio UX v1.0：角色語音（Voice）最小必要控制器 ──
-// 刻意只做「同時間只播一句、防止重疊、每句獨立 Cooldown、播放時降低 BGM／Ambient、
-// 結束或失敗都會恢復音量」這幾件事，不建立 AudioManager／VoiceManager 或完整 Registry
-// 架構，也不搬移 Drive master 的音訊程式。9 段語音都是固定情境語音，不朗讀動態畫面
-// 文字，因此這裡不建立、也不需要 Dialogue 逐字文字 metadata。
+// 刻意只做「同時間只播一句、防止重疊、播放時降低 BGM／Ambient、結束或失敗都會恢復音量」
+// 這幾件事，不建立 AudioManager／VoiceManager 或完整 Registry 架構，也不搬移 Drive master
+// 的音訊程式。9 段語音都是固定情境語音，不朗讀動態畫面文字，因此這裡不建立、也不需要
+// Dialogue 逐字文字 metadata。
 //
-// Cooldown 選擇（本輪自行選定，非既有文件規定值，可再調整）：
-// - 「進入型」（歡迎詞／零違規獎勵）：30 分鐘，並用 localStorage 持久化，
-//   確保 F5、30 秒定時刷新、短時間內重複切換頁籤都不會重播。
-// - 「動作型」（訂單/家事/違規紀錄送出）：4 秒，只用來擋同一動作被快速重複觸發，
-//   不需要跨重新整理持久化。
+// 播放資格：不用時間型 Cooldown，改成「單次網頁生命週期內，每個語音事件最多成功播放
+// 一次」，只用記憶體內的 Set 記錄（_voiceEventPlayedOnce），不寫 localStorage/sessionStorage；
+// 真正重新整理瀏覽器或關閉重進網站才會重設。事件 key 預設等於音檔 key，但同一段音檔
+// 若對應兩個不同情境（例如熊貓違規紀錄的「媽媽端送出」跟「孩子端檢視」），呼叫端可以
+// 傳入不同的 eventKey，讓兩者的「這次網頁生命週期播過了嗎」各自獨立計算。
 const VOICE_ASSETS = {
-  bearRestaurantWelcome:    { file: 'sounds/voice/bear_restaurant_welcome.mp3',    volume: 0.9, cooldown: 30*60*1000, persist: true },
-  bearOrderReceived:        { file: 'sounds/voice/bear_order_received.mp3',        volume: 0.9, cooldown: 4000 },
-  foxChoreWelcome:          { file: 'sounds/voice/fox_chore_welcome.mp3',          volume: 0.9, cooldown: 30*60*1000, persist: true },
-  foxChoreSubmitted:        { file: 'sounds/voice/fox_chore_submitted.mp3',        volume: 0.9, cooldown: 4000 },
-  pandaZeroViolation:       { file: 'sounds/voice/panda_zero_violation.mp3',       volume: 0.9, cooldown: 30*60*1000, persist: true },
-  pandaViolationRecord:     { file: 'sounds/voice/panda_violation_record.mp3',     volume: 0.9, cooldown: 4000 },
-  hedgehogBankWelcome:      { file: 'sounds/voice/hedgehog_bank_welcome.mp3',      volume: 0.9, cooldown: 30*60*1000, persist: true },
-  hedgehogWeeklyBalance:    { file: 'sounds/voice/hedgehog_weekly_balance.mp3',    volume: 0.9, cooldown: 4000 },
-  hedgehogSpendingReminder: { file: 'sounds/voice/hedgehog_spending_reminder.mp3', volume: 0.9, cooldown: 4000 },
+  bearRestaurantWelcome:    { file: 'sounds/voice/bear_restaurant_welcome.mp3',    volume: 0.9 },
+  bearOrderReceived:        { file: 'sounds/voice/bear_order_received.mp3',        volume: 0.9 },
+  foxChoreWelcome:          { file: 'sounds/voice/fox_chore_welcome.mp3',          volume: 0.9 },
+  foxChoreSubmitted:        { file: 'sounds/voice/fox_chore_submitted.mp3',        volume: 0.9 },
+  pandaZeroViolation:       { file: 'sounds/voice/panda_zero_violation.mp3',       volume: 0.9 },
+  pandaViolationRecord:     { file: 'sounds/voice/panda_violation_record.mp3',     volume: 0.9 },
+  hedgehogBankWelcome:      { file: 'sounds/voice/hedgehog_bank_welcome.mp3',      volume: 0.9 },
+  hedgehogWeeklyBalance:    { file: 'sounds/voice/hedgehog_weekly_balance.mp3',    volume: 0.9 },
+  hedgehogSpendingReminder: { file: 'sounds/voice/hedgehog_spending_reminder.mp3', volume: 0.9 },
+  foxBirthday:              { file: 'sounds/voice/fox_birthday.mp3',               volume: 0.9 },
 };
 const _voiceAssetPool = {};
-const _voiceLastPlayed = {};
-let _voiceQueue = [];
-let _voiceActiveKey = null;
+// 每個語音 key 的 priming 狀態機（見 _primeAudioForMobileAutoplay()／_startVoice()）：
+// - key 存在於 _voicePrimePromises：目前有一次 priming 正在進行中，共用同一個 promise，
+//   不會對同一個 Audio 重複操作。
+// - key 存在於 _voicePrimeSucceeded：priming 的 play() 真的成功過，永久跳過，不再重新 prime。
+// - 兩者都不存在：還沒 prime 過，或上一次 priming 失敗——下一次使用者手勢（下一次呼叫
+//   _primeAudioForMobileAutoplay()）會重新嘗試，不會自己在背景反覆重試。
+const _voicePrimePromises = {};
+const _voicePrimeSucceeded = new Set();
+let _voiceQueue = []; // { voiceKey, eventKey } 佇列
+let _voiceActiveKey = null; // 目前正在播放中的「音檔 key」（供 Ducking／音量套用查表用）
 const VOICE_DUCK_FACTOR = 0.35; // Voice 播放時，BGM／Ambient 降到原音量的 35%
 const _duckableKeys = ['bgmDay', 'bgmNight', 'forestDayAmbience', 'restaurantAmbience', 'ambienceNightBugs'];
 
-function _voiceCooldownStorageKey(key) { return 'forest_voice_last_' + key; }
-
-function _voiceOnCooldown(key, cooldownMs, persist) {
-  const now = Date.now();
-  if (persist) {
-    let last = 0;
-    try { last = Number(localStorage.getItem(_voiceCooldownStorageKey(key)) || 0); } catch(e) {}
-    return (now - last) < cooldownMs;
-  }
-  return (now - (_voiceLastPlayed[key] || 0)) < cooldownMs;
-}
-function _voiceMarkPlayed(key, persist) {
-  const now = Date.now();
-  _voiceLastPlayed[key] = now;
-  if (persist) {
-    try { localStorage.setItem(_voiceCooldownStorageKey(key), String(now)); } catch(e) {}
-  }
-}
+// 單次網頁生命週期內最多播放一次：只存在記憶體，reload 就會清空
+const _voiceEventPlayedOnce = new Set();
+function hasVoiceEventPlayedOnce(eventKey) { return _voiceEventPlayedOnce.has(eventKey); }
 
 function _duckBackgroundAudio(duck) {
   _duckableKeys.forEach(key => {
@@ -4082,54 +4285,90 @@ function _reapplyCategoryVolume(category) {
   });
 }
 
-// 唯一的語音播放入口：安靜模式／Voice 關閉／冷卻中都會安靜跳過，不拋錯、不中斷呼叫端。
-// _voicePlayAttemptInFlight：同一句在「已排入佇列／正在嘗試播放，但還不知道是否真的成功」
-// 這段期間，避免連點或短時間內重入又再排一次；播放成功或失敗都會清掉這個標記。
+// 唯一的語音播放入口：安靜模式／Voice 關閉／這個事件本次網頁生命週期已經播過都會安靜跳過，
+// 不拋錯、不中斷呼叫端。
+// _voicePlayAttemptInFlight：同一個事件在「已排入佇列／正在嘗試播放，但還不知道是否真的成功」
+// 這段期間，避免連點或短時間內重入又再排一次；播放成功或失敗都會清掉這個標記。用 eventKey
+// 追蹤（預設等於 voiceKey），這樣同一段音檔在不同事件下可以各自獨立防重入。
 const _voicePlayAttemptInFlight = new Set();
-function playVoiceAsset(key) {
+function playVoiceAsset(voiceKey, eventKey) {
+  eventKey = eventKey || voiceKey;
   try {
     if (isQuietModeOn() || !isVoiceEnabled()) return;
-    const def = VOICE_ASSETS[key];
+    const def = VOICE_ASSETS[voiceKey];
     if (!def) return;
-    if (_voiceOnCooldown(key, def.cooldown, def.persist)) return;
-    if (_voicePlayAttemptInFlight.has(key)) return;
-    _voicePlayAttemptInFlight.add(key);
-    _enqueueVoice(key);
+    // ready:false（例如尚未提供正式錄音的生日語音）：在真的建立 Audio／發出網路請求之前就安靜跳過，
+    // 不依賴播放失敗後的 catch——不發 404、不觸發 ducking、不印警告，呼叫端可以安全地把這當作
+    // 「這句話這次沒有播」，自行決定要不要退回別的語音。
+    if (def.ready === false) return;
+    if (hasVoiceEventPlayedOnce(eventKey)) return;
+    if (_voicePlayAttemptInFlight.has(eventKey)) return;
+    _voicePlayAttemptInFlight.add(eventKey);
+    _enqueueVoice(voiceKey, eventKey);
   } catch(e) {
     // 語音播放異常不得中斷呼叫端（訂單/家事/違規流程）
   }
 }
 
-function _enqueueVoice(key) {
-  if (_voiceActiveKey) { _voiceQueue.push(key); return; } // 同時間只能播一段 Voice，其餘排隊
-  _startVoice(key);
+function _enqueueVoice(voiceKey, eventKey) {
+  if (_voiceActiveKey) { _voiceQueue.push({ voiceKey, eventKey }); return; } // 同時間只能播一段 Voice，其餘排隊
+  // _startVoice() 改成 async 後，內部雖然已經逐段包好 try/catch，但呼叫端不 await 它、
+  // 理論上仍可能因為極端情況（例如 audio.play() 罕見的同步拋錯）產生 unhandled rejection，
+  // 補一個安全的 .catch() 兜底，維持修正前「語音播放異常不得中斷呼叫端」的既有原則。
+  _startVoice(voiceKey, eventKey).catch(() => {});
 }
 
-function _startVoice(key) {
-  const def = VOICE_ASSETS[key];
-  if (!def) { _voicePlayAttemptInFlight.delete(key); _onVoiceEnded(); return; }
-  let audio = _voiceAssetPool[key];
-  if (!audio) { audio = new Audio(def.file); _voiceAssetPool[key] = audio; }
-  audio.volume = def.volume * getCategoryVolume('voice');
-  _voiceActiveKey = key;
+async function _startVoice(voiceKey, eventKey) {
+  const def = VOICE_ASSETS[voiceKey];
+  if (!def) { _voicePlayAttemptInFlight.delete(eventKey); _onVoiceEnded(); return; }
+
+  // 立刻佔住「目前播放中」的位置（跟修正前同一個時間點），避免下面等待 priming 期間，
+  // 有其他語音誤判成「沒有人在播」而跳過 queue 直接搶播。
+  _voiceActiveKey = voiceKey;
   _duckBackgroundAudio(true);
-  audio.currentTime = 0;
-  audio.onended = _onVoiceEnded;
-  audio.onerror = () => {
-    console.warn('[playVoiceAsset] 語音載入失敗（不影響操作）：' + def.file);
-    _voicePlayAttemptInFlight.delete(key);
-    _onVoiceEnded();
-  };
-  const playPromise = audio.play();
-  const markStarted = () => { _voiceMarkPlayed(key, def.persist); _voicePlayAttemptInFlight.delete(key); };
-  if (playPromise && typeof playPromise.then === 'function') {
-    playPromise.then(markStarted).catch(() => {
-      console.warn('[playVoiceAsset] 語音播放被瀏覽器阻擋或失敗（不影響操作）：' + def.file);
-      _voicePlayAttemptInFlight.delete(key); // 沒有真正播放成功，不寫入 Cooldown，讓下一次呼叫可以馬上重試
+
+  // 從這裡開始到真正呼叫 audio.play() 為止，中間任何一步（取得/建立 Audio、設定
+  // volume/currentTime/event handler）理論上都可能同步拋出非預期例外——outer try/catch
+  // 統一接住，一律視同播放失敗，走跟 onerror／play().catch() 相同的清理路徑，確保
+  // _voiceActiveKey／ducking／in-flight／queue 一定會被清理，不會因為外層呼叫端只是
+  // 空 catch() 兜底就卡住。
+  try {
+    // 若這個 key 目前有 priming 正在進行／已經排定，先等它 settle（成功或安全失敗都算，
+    // 見 _primeAudioForMobileAutoplay 的 _voicePrimePromises），確保正式播放開始後，
+    // 不會再被比較晚結束的 priming 收尾動作暫停、歸零。這是等一個真實存在、一定會 settle
+    // 的非同步操作，不是用 setTimeout 猜時間。這裡額外包一層 try/catch：萬一 primePromise
+    // 本身意外 reject，不能讓它被外層 catch 誤判成「正式播放失敗」而放棄嘗試播放。
+    const primePromise = _voicePrimePromises[voiceKey];
+    if (primePromise) { try { await primePromise; } catch(e) {} }
+
+    let audio = _voiceAssetPool[voiceKey];
+    if (!audio) { audio = new Audio(def.file); _voiceAssetPool[voiceKey] = audio; }
+    audio.volume = def.volume * getCategoryVolume('voice');
+    audio.currentTime = 0;
+    audio.onended = _onVoiceEnded;
+    audio.onabort = _onVoiceEnded; // abort 也視為一種結束路徑，確保一定會清理 active 狀態
+    audio.onerror = () => {
+      console.warn('[playVoiceAsset] 語音載入失敗（不影響操作）：' + def.file);
+      _voicePlayAttemptInFlight.delete(eventKey);
       _onVoiceEnded();
-    });
-  } else {
-    markStarted();
+    };
+    const playPromise = audio.play();
+    const markStarted = () => { _voiceEventPlayedOnce.add(eventKey); _voicePlayAttemptInFlight.delete(eventKey); };
+    if (playPromise && typeof playPromise.then === 'function') {
+      playPromise.then(markStarted).catch(() => {
+        console.warn('[playVoiceAsset] 語音播放被瀏覽器阻擋或失敗（不影響操作）：' + def.file);
+        _voicePlayAttemptInFlight.delete(eventKey); // 沒有真正播放成功，不標記已播放，下次可以馬上重試
+        _onVoiceEnded();
+      });
+    } else {
+      markStarted();
+    }
+  } catch (e) {
+    // 只會接住上面同步拋出的例外（例如 new Audio()／audio.play() 罕見的同步 throw）；
+    // playPromise 自己的 reject 已經有獨立的 .catch() 處理，不會被這裡重複攔截。
+    console.warn('[playVoiceAsset] 語音播放初始化時發生非預期錯誤（不影響操作）：' + def.file);
+    _voicePlayAttemptInFlight.delete(eventKey);
+    _onVoiceEnded();
   }
 }
 
@@ -4138,35 +4377,30 @@ function _onVoiceEnded() {
   _voiceActiveKey = null;
   _duckBackgroundAudio(false);
   const next = _voiceQueue.shift();
-  if (next) _startVoice(next);
+  if (next) _startVoice(next.voiceKey, next.eventKey).catch(() => {}); // 同上，兜底避免 unhandled rejection
 }
 
 // ── 熊貓違規事件：whistle_short.mp3 → 約 200ms → panda_violation_record.mp3，統一走這一個入口 ──
 // 用在兩個情境：媽媽端「違規紀錄成功送出」，以及孩子端「進入/刷新違規頁且今天已有違規」。
+// 這兩個情境是不同事件，各自用不同的 eventKey，本次網頁生命週期都可以各成功播放一次。
+// whistle→語音視為一個完整事件：只有語音真的開始播放，才會把 eventKey 標記為已播放
+// （標記邏輯在 _startVoice() 的成功分支），不會出現「哨音播了、語音沒播」卻算已完成的半完成狀態。
 let _pandaSequenceTimer = null;
-// 回傳哨音的播放結果 Promise（一律 resolve，見 playAudioAsset），呼叫端可以用它判斷「這次的哨音
-// 是否真的開始播放」，藉此決定自己那一份 Cooldown 要不要寫入（例如孩子端的檢視頁 Cooldown）。
-function playPandaViolationSequence() {
-  if (isQuietModeOn()) return Promise.resolve(false);
+const _pandaSequenceInFlight = new Set(); // 用 eventKey 追蹤，避免連點在語音真的開始播放前重複觸發整組序列
+function playPandaViolationSequence(eventKey) {
+  if (isQuietModeOn() || !isVoiceEnabled()) return Promise.resolve(false);
+  if (hasVoiceEventPlayedOnce(eventKey)) return Promise.resolve(false);
+  if (_pandaSequenceInFlight.has(eventKey)) return Promise.resolve(false);
+  _pandaSequenceInFlight.add(eventKey);
   const whistleStarted = playAudioAsset('sfxWhistle');
   if (_pandaSequenceTimer) clearTimeout(_pandaSequenceTimer);
   _pandaSequenceTimer = setTimeout(() => {
     _pandaSequenceTimer = null;
-    playVoiceAsset('pandaViolationRecord');
+    _pandaSequenceInFlight.delete(eventKey); // 交給 _startVoice() 自己的 in-flight／已播放標記接手
+    _voicePlayAttemptInFlight.add(eventKey);
+    _enqueueVoice('pandaViolationRecord', eventKey);
   }, 200);
   return whistleStarted;
-}
-
-// 孩子端「檢視違規頁」這個觸發點獨立計算冷卻，跟送出扣款當下的動作型 Cooldown 分開，
-// 用持久化（localStorage）避免 30 秒定時刷新或短時間內反覆切回這頁造成無限重播。
-const PANDA_VIOLATION_VIEW_COOLDOWN_MS = 30 * 60 * 1000;
-function _pandaViolationViewOnCooldown() {
-  let last = 0;
-  try { last = Number(localStorage.getItem('forest_voice_last_pandaViolationView') || 0); } catch(e) {}
-  return (Date.now() - last) < PANDA_VIOLATION_VIEW_COOLDOWN_MS;
-}
-function _markPandaViolationViewPlayed() {
-  try { localStorage.setItem('forest_voice_last_pandaViolationView', String(Date.now())); } catch(e) {}
 }
 
 // ── 行動瀏覽器音訊解鎖 ──
@@ -4193,9 +4427,62 @@ function _primeAudioForMobileAutoplay() {
   };
   // 只解鎖真正會從 setTimeout／await fetch() 之後才第一次播放的資產，不含 BGM／Ambient
   // （那些已經在 updateBackgroundAudio(true) 裡、同一個使用者手勢當下直接播放過，不需要重複解鎖），
-  // 也不含一般同步觸發的 UI 音效，避免一次觸發過多同時播放請求。
+  // 也不含一般同步觸發的 UI 音效，避免一次觸發過多同時播放請求。這兩個目前都不會在同一次
+  // enterRestaurant() 裡緊接著被真的播放，跟下面 Voice 的情況不同，維持原本簡單的寫法。
   ['sfxWhistle', 'orderSuccess'].forEach(key => prime(key, AUDIO_ASSETS_MIN[key], _audioAssetPool));
-  Object.keys(VOICE_ASSETS).forEach(key => prime(key, VOICE_ASSETS[key], _voiceAssetPool));
+
+  // Voice：bearRestaurantWelcome、foxBirthday 都會在同一次 enterRestaurant() 裡
+  // 緊接著被 playVoiceAsset() 真的播放，如果 priming 的靜音 play()/pause() 非同步結束得比正式播放晚，
+  // 會把正式播放的聲音暫停、歸零、_voiceActiveKey 卡住不清除。這裡額外做幾件事解決：
+  // ① _voicePrimePromises／_voicePrimeSucceeded 這組狀態機記住每個 key 目前是「進行中」「成功過」
+  //    還是「還沒試過／上次失敗」，成功後永遠不重新 prime，同一時間重複呼叫共用同一個進行中的
+  //    promise，不會對同一個 Audio 重複操作；但失敗不會被誤記成成功，下一次使用者手勢
+  //    （下一次呼叫 _primeAudioForMobileAutoplay()）仍會重新嘗試，不會自己在背景反覆重試
+  //    （見需求 7 與後續追加的失敗重試要求）。
+  //    _startVoice() 開始正式播放前會先 await 進行中的 promise（若有），確保 priming 一定先
+  //    徹底結束，settle 之後不論成敗，promise 本身保證 resolve，不會有 unhandled rejection。
+  // ② 即便如此，priming 的收尾動作仍多一層保險：動手 pause／歸零之前，先確認 _voiceActiveKey
+  //    不是這個 key——如果正式播放已經搶先把這個 key 標記成使用中，就完全不碰這個 Audio，
+  //    音量／播放狀態交給正式播放邏輯決定（見需求 10）。
+  // priming 本身的 play() 呼叫仍然是 enterRestaurant() 使用者手勢當下、沒有任何 await 之前的
+  // 同步呼叫，不受這裡的 promise 記帳影響——真正「離開手勢情境」的只有正式播放（_startVoice）
+  // 那個可能被 await 往後推遲的 play()，而它能安全地晚一點呼叫，是因為 iOS 只要求同一個
+  // <audio> 元素「曾經」在手勢當下成功播放過一次（也就是這裡的 priming）就會記住解鎖狀態，
+  // 之後同一個元素再次呼叫 play() 不需要重新處在手勢情境裡。
+  const primeVoice = (key, def) => {
+    if (_voicePrimeSucceeded.has(key)) return; // 已經真的成功過，永久跳過
+    if (_voicePrimePromises[key]) return; // 目前有一次還在進行中，共用同一個 promise，不重複操作
+    let audio = _voiceAssetPool[key];
+    if (!audio) { audio = new Audio(def.file); _voiceAssetPool[key] = audio; }
+    const restoreVolume = audio.volume;
+    audio.volume = 0;
+    let playResult;
+    try { playResult = audio.play(); } catch(e) { playResult = null; }
+    const onSuccess = () => {
+      if (_voiceActiveKey !== key) {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.volume = restoreVolume;
+      }
+      // 正式播放已經搶先佔用這個 key：這裡完全不碰這個 Audio。
+      _voicePrimeSucceeded.add(key); // 真的成功過，之後永久跳過
+      delete _voicePrimePromises[key]; // 「進行中」狀態結束
+    };
+    const onFail = () => {
+      audio.volume = restoreVolume;
+      // 不加入 _voicePrimeSucceeded——不標記為成功。只清除「進行中」狀態，讓下一次使用者手勢
+      // 呼叫 primeVoice() 時，兩個檢查都會通過，重新真的嘗試一次 play()。
+      delete _voicePrimePromises[key];
+    };
+    // .then(onSuccess, onFail)：不論 priming 的 play() 成功或失敗都要 settle，這個 promise
+    // 保證最終一定會 resolve，不會有 unhandled rejection，也不會永遠 pending。
+    _voicePrimePromises[key] = (playResult && typeof playResult.then === 'function')
+      ? playResult.then(onSuccess, onFail)
+      : Promise.resolve().then(onSuccess);
+  };
+  // prime:false 的語音不納入預播——保留給未來偶發、非每次進入都會播、音檔可能還不存在的語音使用。
+  Object.keys(VOICE_ASSETS).filter(key => VOICE_ASSETS[key].prime !== false)
+    .forEach(key => primeVoice(key, VOICE_ASSETS[key]));
 }
 
 // 切頁／切分頁時呼叫：取消尚未播放的哨音→語音序列，以及還在排隊、尚未真正開始播放的 Voice。
@@ -4441,7 +4728,15 @@ async function enterRestaurant() {
   updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
   playAudioAsset('welcomeEnter');
-  playVoiceAsset('bearRestaurantWelcome'); // Audio UX v1.0：熊大廚固定歡迎語音，30 分鐘持久化 Cooldown 防止 F5／重複進入重播
+  // 生日語音（狐狸媽媽）優先於一般歡迎語音，兩者互斥、不會同時播放。
+  if (isBirthdayToday(currentChild) && VOICE_ASSETS.foxBirthday.ready !== false) {
+    playVoiceAsset('foxBirthday');
+  } else {
+    playVoiceAsset('bearRestaurantWelcome'); // Audio UX v1.0：熊大廚固定歡迎語音，30 分鐘持久化 Cooldown 防止 F5／重複進入重播
+  }
+
+  updateBirthdayFab();
+  maybeShowBirthdayCard(currentChild);
 
   const wp = document.getElementById('welcome-page');
   wp.classList.add('fade-out');
