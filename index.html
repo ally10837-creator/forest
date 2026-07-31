@@ -31,7 +31,7 @@ body {
 }
 
 /* ── CANVAS ── */
-#fx-canvas { position:absolute; inset:0; pointer-events:none; z-index:200; width:100%; }
+#fx-canvas { position:absolute; inset:0; pointer-events:none; z-index:950; width:100%; }
 
 /* ── NAV BAR ── */
 .navbar {
@@ -169,6 +169,98 @@ body {
   background: var(--rose); color:white; border-radius:50px;
   min-width:22px; height:22px; font-size:12px; font-weight:700;
   display:flex; align-items:center; justify-content:center; padding: 0 4px;
+}
+
+/* ── BIRTHDAY FAB（生日當天重新開啟卡片的入口，避免關掉卡片後真的錯過禮物）── */
+.birthday-fab {
+  position: absolute; bottom: 24px; left: 20px; z-index:150;
+  background: var(--mango); color:var(--cocoa); border:2px solid var(--cocoa); border-radius: 50px;
+  padding: 10px 16px; font-family:inherit; font-size:14px; font-weight:800;
+  cursor:pointer; box-shadow: var(--shadow); display:none; align-items:center; gap:6px;
+  transition: transform 0.15s;
+}
+.birthday-fab:active { transform: scale(0.95); }
+@media (prefers-reduced-motion: no-preference) {
+  .birthday-fab { animation: birthdayFabBob 1.4s ease-in-out infinite; }
+}
+@keyframes birthdayFabBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+
+/* ── BIRTHDAY CARD MODAL ── */
+/* 對齊改成靠頂（原本是垂直置中），內容展開變高後，領取按鈕才不會被往下擠出可視範圍外
+   需要額外捲動才看得到——寧可讓卡片蓋住下面的菜單內容，也要讓按鈕停留在畫面上半部，
+   容易點到。overflow-y:auto 是保險，萬一內容真的還是比一屏高，遮罩本身也能捲動。 */
+.birthday-modal {
+  position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:900;
+  display:flex; align-items:flex-start; justify-content:center;
+  padding:32px 20px 20px; overflow-y:auto;
+}
+/* 信封（關閉狀態）跟卡片（展開狀態）共用同一套寬度邏輯（約螢幕寬度 7 成，設上限避免
+   在大螢幕上過度誇張），這樣「信封展開變成卡片」視覺上是同一個物件在變化，
+   不是一個小圖示突然跳成一個不成比例的大方塊。
+   關閉狀態故意不給背景／邊框——讓信封本身直接浮在遮罩上、去背無框；
+   展開後才由 .card-opened 補上卡片感的米白底／咖啡邊框／陰影。 */
+.birthday-box {
+  --bday-w: min(72vw, 480px);
+  max-width:94vw;
+  text-align:center; padding:8px 0;
+}
+/* 關閉狀態（只顯示信封）故意不設 width，讓信封圖片自己決定寬度（見 .envelope-img），
+   不會被卡片的寬度上限（--bday-w）夾住而顯得比展開後的卡片還小。
+   .card-opened 才把寬度鎖到 --bday-w，這時候才是真正的卡片版面。 */
+.birthday-box.card-opened {
+  width:var(--bday-w);
+  background:var(--cream); border:3px solid var(--cocoa); border-radius:20px;
+  padding:24px 20px; box-shadow:5px 5px 0 var(--cocoa);
+}
+/* 信封改用真正的 <button>，支援鍵盤 Enter／Space 觸發與 focus-visible 焦點樣式，
+   不是只能滑鼠點擊的 div；圖形本身改用請 Gemini 生成、去背處理過的插畫 PNG
+   （img/birthday_envelope.png），風格跟網站現有菜單食物插畫一致（柔和陰影、可愛表情），
+   不是程式碼畫的幾何圖形。*/
+.birthday-envelope-btn {
+  cursor:pointer; user-select:none; background:none; border:none; padding:4px;
+  font-family:inherit; display:inline-block; width:100%;
+  animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
+}
+/* 信封圖片本身是扁寬的長方形（900x490，比例約1.84:1），就算跟卡片用同一個寬度數字，
+   因為比例關係換算出來的高度還是矮很多，視覺上會比展開後的卡片顯得小、不對稱。
+   這裡刻意給信封比卡片更大的寬度上限，讓關閉狀態的信封本身也有足夠的存在感。 */
+.envelope-img { width: min(88vw, 620px); max-width:100%; height:auto; display:block; margin:0 auto; }
+.birthday-envelope-btn:focus-visible {
+  outline:3px solid var(--sky); outline-offset:4px; border-radius:14px;
+}
+.birthday-envelope-btn.no-anim { animation:none; }
+.birthday-envelope-btn:disabled { cursor:default; }
+/* 點下去之後：信封整體放大＋淡出，像是「打開後被放到一邊」，卡片才接著展開，不是圖示
+   瞬間被整個換掉。時間拉長一點（0.7s，總長跟 JS 的 ENVELOPE_OPEN_ANIM_MS 對齊），
+   避免整段互動感覺太趕。改用單張圖片後不再有信封蓋／信封本體分開兩層可以個別動畫，
+   整張圖一起做這個效果。 */
+.envelope-img {
+  transition: transform 0.7s cubic-bezier(0.34,1.56,0.64,1), opacity 0.6s ease;
+}
+.birthday-envelope-btn.opening .envelope-img { transform: scale(1.15) translateY(-10px); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .envelope-img { transition: none; }
+}
+.birthday-content { display:none; }
+.birthday-content.open { display:block; animation: birthdayCardOpen 0.6s ease-out; }
+@keyframes birthdayEnvelopeBob {
+  0%,100% { transform:translateY(0) rotate(-2deg); }
+  50%     { transform:translateY(-6px) rotate(2deg); }
+}
+@keyframes birthdayCardOpen {
+  from { transform:scale(0.7) rotate(-4deg); opacity:0; }
+  to   { transform:scale(1) rotate(0deg); opacity:1; }
+}
+.birthday-claim-btn {
+  width:100%; background:var(--mango); border:2px solid var(--cocoa); border-radius:12px;
+  padding:14px; font-family:inherit; font-size:16px; font-weight:800; cursor:pointer;
+  box-shadow:2px 2px 0 var(--cocoa);
+}
+.birthday-claim-btn:disabled { opacity:0.6; cursor:default; }
+@media (prefers-reduced-motion: reduce) {
+  .birthday-envelope-btn { animation:none; }
+  .birthday-content.open { animation:none; }
+  .birthday-fab { animation:none; }
 }
 
 /* ── MODAL ── */
@@ -990,6 +1082,8 @@ body.audio-settings-open { overflow: hidden; }
 
   <!-- Cart FAB -->
   <button class="cart-fab" onclick="openCart()" id="cart-fab" style="display:none;">🐰 蔓蔓 的購物車 <span class="cart-count" id="cart-count">0</span></button>
+  <!-- Birthday FAB（候選版）：今天是目前這位孩子的生日才顯示，點了重新打開生日卡片 -->
+  <button class="birthday-fab" id="birthday-fab" onclick="openBirthdayCard(currentChild)" style="display:none;">🎂 生日禮物</button>
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
@@ -1543,9 +1637,11 @@ function hamsterSVG(size=36) {
   </svg>`;
 }
 
+// birthday 只存月/日（Ally 已確認可公開），不存出生年份——年份只存在後端 forest_gs.gs，
+// 用來計算「今天滿幾歲」，前端與公開原始碼完全不會出現出生年份本身。
 const MEMBERS = {
-  candice: { name:"蔓蔓", avatar:"🐰", accentClass:"candice", colorClass:"candice-col" },
-  harris:  { name:"昊昊", avatar:"🐹", accentClass:"harris",  colorClass:"harris-col"  }
+  candice: { name:"蔓蔓", avatar:"🐰", accentClass:"candice", colorClass:"candice-col", birthday:{month:10, day:29} },
+  harris:  { name:"昊昊", avatar:"🐹", accentClass:"harris",  colorClass:"harris-col",  birthday:{month:6,  day:23} }
 };
 
 function memberAvatar(id, size=36) {
@@ -1585,6 +1681,9 @@ async function switchChild(id) {
   document.getElementById('tab-candice').className = 'child-tab' + (id==='candice'?' active-candice':'');
   document.getElementById('tab-harris').className  = 'child-tab' + (id==='harris' ?' active-harris':'');
   updateCartFab(); // 切換後顯示該孩子自己的購物車數量
+  updateBirthdayFab(); // 切換後依新孩子重新判斷小蛋糕按鈕要不要顯示
+  maybeShowBirthdayCard(id); // 若切過去的孩子今天生日、且今天還沒關過卡片，個別觸發（不影響另一位孩子的狀態）
+  _maybePlayBirthdayVoice(id); // enterRestaurant() 當下 currentChild 固定是蔓蔓，若真正壽星是昊昊，這裡補播他的生日語音
   switchSubTab(currentSubTab, true);
   await loadAll();             // 再重新抓取最新資料，三個頁籤（餐館/家事/我的訂單）一起同步更新
 }
@@ -2189,6 +2288,29 @@ function _taipeiDow(date) {
   const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', weekday: 'short' }).format(date);
   const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return map[wd] ?? date.getDay();
+}
+
+// ── 生日判斷（只比對月/日，不比對出生年份；出生年份只存在後端）──
+// 明確用 Asia/Taipei 時區，跟 getTaipeiTodayStr()/_taipeiDow() 同一套時區來源，
+// 不依賴裝置本地時區，避免孩子平板時區設定不同造成生日判斷偏移。
+function _taipeiMonthDay(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' }).formatToParts(now);
+  return {
+    month: Number(parts.find(p => p.type === 'month').value),
+    day:   Number(parts.find(p => p.type === 'day').value)
+  };
+}
+// window.__forestTestBirthdayChildId：本機測試專用覆寫，只影響「要不要顯示卡片」這個前端判斷，
+// 不影響後端 claimBirthdayReward() 的真實日期判斷——所以就算測試時強制顯示卡片，按下「收下禮物」
+// 送到後端還是會被判定 not_birthday，不會真的發放金幣。
+function isBirthdayToday(childId, now = new Date()) {
+  try {
+    if (typeof window !== 'undefined' && window.__forestTestBirthdayChildId === childId) return true;
+    const b = MEMBERS[childId] && MEMBERS[childId].birthday;
+    if (!b || !b.month || !b.day) return false; // 資料缺失安全跳過，不影響其他功能
+    const t = _taipeiMonthDay(now);
+    return t.month === b.month && t.day === b.day;
+  } catch(e) { return false; }
 }
 
 // 從 created_at 字串（格式如 "2026/06/21 14:30"）取出日期部分，統一成 yyyy-MM-dd 以便比較
@@ -3059,6 +3181,243 @@ function closeInterestNotify() {
   if (modal) modal.remove();
 }
 
+// ── 生日卡片（候選版）──────────────────────────────────────────
+// 後端 claimBirthdayReward() 是「是否已領過200金幣」的唯一真實來源；這裡的 localStorage
+// 只用來記「今天這個孩子的卡片關掉了沒有」，純粹避免同一天反覆自動彈出，不是領取依據。
+function _birthdayCardDismissKey(childId) {
+  return `forest_birthday_card_dismissed_${childId}_${getTaipeiTodayStr()}`;
+}
+function _hasDismissedBirthdayCardToday(childId) {
+  try { return !!localStorage.getItem(_birthdayCardDismissKey(childId)); } catch(e) { return false; }
+}
+function _markBirthdayCardDismissedToday(childId) {
+  try { localStorage.setItem(_birthdayCardDismissKey(childId), '1'); } catch(e) {}
+}
+
+// enterRestaurant() 進入當下呼叫：今天是生日、且今天還沒關掉過卡片，才自動彈出。
+// 已經關掉過的話不會自動再跳，但下面的生日小蛋糕按鈕仍可以手動重新開啟，避免真的錯過禮物。
+function maybeShowBirthdayCard(childId) {
+  try {
+    if (!isBirthdayToday(childId)) return;
+    if (_hasDismissedBirthdayCardToday(childId)) return;
+    openBirthdayCard(childId);
+  } catch(e) { /* 生日卡片異常不得影響進入餐館流程 */ }
+}
+
+function openBirthdayCard(childId) {
+  try {
+    const m = MEMBERS[childId];
+    if (!m) return;
+    const existing = document.getElementById('birthday-modal');
+    if (existing) existing.remove();
+
+    const info = (allData[childId] && allData[childId].birthdayInfo) || {};
+    const age = (typeof info.age === 'number') ? info.age : null;
+    const alreadyClaimed = !!info.claimedThisYear;
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const greetingHtml = rb(m.name + ' 生日快樂！');
+    const ageHtml = age != null ? ('🎂 ' + rb(age + ' 歲生日快樂！')) : '';
+    const claimArea = alreadyClaimed
+      ? `<div style="font-size:13px;color:var(--cocoa-soft);font-weight:700;margin-top:6px;">${rb('今年的生日禮物已經領取囉')} 💛</div>`
+      : `<button class="birthday-claim-btn" id="birthday-claim-btn" onclick="_claimBirthdayReward('${childId}')">${rb('收下生日禮物')} 🎁</button>`;
+
+    // 賀詞（姓名＋生日快樂、歲數）用逐字打字機效果呈現，不是一次全部顯示；
+    // 打字所需的原始 HTML 先存起來，等 _openBirthdayEnvelope() 真的展開卡片時才用
+    // （見 _typeRevealHtml()）。金幣說明／領取按鈕等其餘內容包在 #birthday-rest-content
+    // 裡，打字完成後才淡入，避免文字還在打、其他內容卻已經全部顯示的違和感。
+    _birthdayCardTexts = { greetingHtml, ageHtml };
+
+    const modal = document.createElement('div');
+    modal.id = 'birthday-modal';
+    modal.className = 'birthday-modal';
+    modal.innerHTML = `
+      <div class="birthday-box" role="dialog" aria-modal="true" aria-label="${m.name} 的生日卡片">
+        <button type="button" class="birthday-envelope-btn${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" aria-label="打開生日禮物信封" onclick="_openBirthdayEnvelope('${childId}')">
+          <img class="envelope-img" src="img/birthday_envelope.png" alt="">
+        </button>
+        <div class="birthday-content" id="birthday-content">
+          <div style="font-size:36px;margin-bottom:6px;">🎉🎈✨</div>
+          <div id="birthday-greeting-text" style="font-size:19px;font-weight:800;margin-bottom:6px;min-height:1.3em;"></div>
+          <div id="birthday-age-text" style="font-size:15px;font-weight:800;color:var(--mango-dark);margin-bottom:6px;min-height:${age != null ? '1.3em' : '0'};"></div>
+          <div id="birthday-rest-content" style="opacity:0;transition:opacity 0.4s ease;">
+            <div id="birthday-claim-area">${claimArea}</div>
+            <div id="birthday-status-msg" style="font-size:13px;font-weight:700;margin:8px 0;"></div>
+            <div style="background:#fff4e0;border:2px solid var(--mango);border-radius:12px;padding:10px;font-size:14px;font-weight:700;margin-top:10px;">
+              🎁 ${rb('森林餐館送你')} <span style="color:var(--mango-dark);">200</span> ${rb('枚生日金幣')}
+            </div>
+          </div>
+        </div>
+        <button type="button" style="margin-top:10px;background:none;border:none;color:var(--cocoa-soft);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="closeBirthdayCard('${childId}')">${rb('晚點再看')}</button>
+      </div>`;
+    document.body.appendChild(modal);
+
+    // ESC 關閉：記住目前是哪個孩子的卡片（給 ESC handler 用，行為要跟按「晚點再看」一致，
+    // 也要標記今天已關閉），並在開啟時把焦點移到信封按鈕，方便鍵盤操作。
+    _birthdayModalChildId = childId;
+    document.addEventListener('keydown', _birthdayModalEscHandler);
+    const envelopeBtn = document.getElementById('birthday-envelope');
+
+    // reduce-motion：直接顯示展開後的卡片內容，不用再點信封，文字也直接整段顯示、不打字
+    if (reduceMotion) {
+      if (envelopeBtn) { envelopeBtn.style.display = 'none'; envelopeBtn.disabled = true; }
+      document.getElementById('birthday-content').classList.add('open');
+      const boxEl0 = document.querySelector('.birthday-box');
+      if (boxEl0) boxEl0.classList.add('card-opened');
+      const greetingEl = document.getElementById('birthday-greeting-text');
+      if (greetingEl) greetingEl.innerHTML = greetingHtml;
+      const ageEl = document.getElementById('birthday-age-text');
+      if (ageEl) ageEl.innerHTML = ageHtml;
+      const restEl = document.getElementById('birthday-rest-content');
+      if (restEl) restEl.style.opacity = '1';
+    } else if (envelopeBtn) {
+      envelopeBtn.focus();
+    }
+  } catch(e) { /* 生日卡片異常不得影響進入餐館流程 */ }
+}
+
+// 開卡片時暫存賀詞／歲數的 rb() 原始 HTML，供 _openBirthdayEnvelope() 打字機效果用。
+let _birthdayCardTexts = null;
+
+// 逐字打字機效果：把 rb() 產生的 HTML 拆成「一個注音字整塊（span.bpm...）或一個一般
+// 字元」為單位，依序接上去，不是一次全部顯示。用整個 span.bpm 區塊當拆分單位（含注音
+// 跟字本身），避免逐一個「HTML 字元」硬拆導致標籤被拆壞、或注音跟字分開出現。
+function _typeRevealHtml(el, html, msPerUnit, onDone) {
+  const tokens = html.match(/<span class="bpm">[\s\S]*?<\/span><\/span>|[\s\S]/g) || [];
+  el.innerHTML = '';
+  let i = 0;
+  (function step() {
+    if (i >= tokens.length) { if (onDone) onDone(); return; }
+    el.innerHTML += tokens[i];
+    i++;
+    setTimeout(step, msPerUnit);
+  })();
+}
+
+// 生日拉炮紙花：沿用既有 burst() 粒子系統，改用多色（品牌色系）取代單色金幣光，做出紙花感。
+// 不引入 canvas-confetti 等外部函式庫——這個效果只需要固定幾種品牌色的圓點粒子，
+// 現有 burst() 已經足夠，維持網站零外部依賴的架構，也不用多背一個函式庫的程式體積。
+// 生日卡片彈窗是 position:fixed（固定貼在目前視窗中央，不會跟著頁面捲動），但 burst()
+// 原本的 cx/cy 是用 #app-wrap 的內容總高度（跟著頁面一起捲動的容器，可能長達幾千 px，
+// 是目前分頁全部內容捲動起來的總高度，不是螢幕可視範圍）去算的——兩者座標系統對不上，
+// 紙花很可能誕生在使用者目前捲動位置以外、完全看不到的地方（實測 iPad 回饋：particles
+// 確實有生成、animate() 迴圈確實有在跑，畫面卻完全看不到紙花，正是這個座標錯位造成的）。
+// 生日紙花改用目前可視視窗（配合目前捲動位置）算座標，不用 #app-wrap 的內容總高度。
+function _burstBirthdayConfetti() {
+  const colors = ['#ffb830', '#ff7f7f', '#52c49a', '#5bb8ff', '#e09600'];
+  const cx = (window.scrollX || 0) + window.innerWidth / 2;
+  const cy = (window.scrollY || 0) + window.innerHeight / 3;
+  colors.forEach(color => {
+    for (let i = 0; i < 16; i++) particles.push(new Particle(cx, cy, color));
+  });
+}
+
+// 信封打開的動畫分兩段：① 信封蓋子掀開＋信封本體淡出縮小（見 CSS .opening 規則，約 1 秒，
+// 刻意放慢，避免整段互動感覺太趕），② 動畫播完才真正隱藏信封、展開卡片內容，讓「打開信封」
+// 在視覺上是連貫的一個動作，不是圖示瞬間被整個換掉。ENVELOPE_OPEN_ANIM_MS 要跟 CSS
+// transition 時間對齊（flap 0.7s + 0.25s delay ≈ 0.95s，這裡抓 950ms）。
+const ENVELOPE_OPEN_ANIM_MS = 950;
+function _openBirthdayEnvelope(childId) {
+  const envelope = document.getElementById('birthday-envelope');
+  const content = document.getElementById('birthday-content');
+  // envelope.disabled：信封改用真正的 <button> 後，用內建的 disabled 狀態防止連點
+  // 重複觸發，不需要另外自己記一個旗標變數。
+  if (!envelope || !content || envelope.disabled) return;
+  envelope.disabled = true; // 立刻鎖住，動畫播放期間不能再被點第二次
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const restEl = document.getElementById('birthday-rest-content');
+
+  function revealContent() {
+    envelope.style.display = 'none';
+    content.classList.add('open');
+    const boxEl = document.querySelector('.birthday-box');
+    if (boxEl) boxEl.classList.add('card-opened'); // 這時候才補上卡片感的米白底／咖啡邊框
+    if (reduceMotion) {
+      // 正常情況下 reduceMotion 時信封已經被隱藏＋disabled，不會走到這裡；保留純粹保險，
+      // 確保就算真的被觸發，文字也是整段直接顯示，不會意外播放打字動畫。
+      const texts = _birthdayCardTexts || {};
+      const greetingEl = document.getElementById('birthday-greeting-text');
+      if (greetingEl) greetingEl.innerHTML = texts.greetingHtml || '';
+      const ageEl = document.getElementById('birthday-age-text');
+      if (ageEl) ageEl.innerHTML = texts.ageHtml || '';
+      if (restEl) restEl.style.opacity = '1';
+      return;
+    }
+    _burstBirthdayConfetti(); // 多色拉炮紙花
+    // 賀詞逐字打字機效果：先打姓名＋生日快樂，打完再接著打歲數，兩段都打完才淡入
+    // 金幣說明／領取按鈕，避免文字還在打、其他內容卻已經全部顯示的違和感。
+    const texts = _birthdayCardTexts || {};
+    const greetingEl = document.getElementById('birthday-greeting-text');
+    const ageEl = document.getElementById('birthday-age-text');
+    const showRest = () => { if (restEl) restEl.style.opacity = '1'; };
+    const typeAge = () => {
+      if (ageEl && texts.ageHtml) _typeRevealHtml(ageEl, texts.ageHtml, 200, showRest);
+      else showRest();
+    };
+    if (greetingEl && texts.greetingHtml) _typeRevealHtml(greetingEl, texts.greetingHtml, 200, typeAge);
+    else typeAge();
+  }
+
+  if (reduceMotion) {
+    revealContent(); // 不播放信封掀開動畫，直接展開
+  } else {
+    envelope.classList.add('opening');
+    setTimeout(revealContent, ENVELOPE_OPEN_ANIM_MS);
+  }
+}
+
+let _birthdayModalChildId = null;
+function _birthdayModalEscHandler(e) {
+  if (e.key === 'Escape') closeBirthdayCard(_birthdayModalChildId);
+}
+
+function closeBirthdayCard(childId) {
+  if (childId) _markBirthdayCardDismissedToday(childId);
+  document.removeEventListener('keydown', _birthdayModalEscHandler); // 避免每次開卡片疊加監聽器
+  _birthdayModalChildId = null;
+  const modal = document.getElementById('birthday-modal');
+  if (modal) modal.remove();
+}
+
+// 按下「收下生日禮物」：立刻鎖住按鈕避免連點，只有後端明確回傳 claimed 才算成功、才更新畫面。
+const _BIRTHDAY_CLAIM_BTN_LABEL = () => rb('收下生日禮物') + ' 🎁'; // rb() 回傳的是HTML，統一用innerHTML賦值
+async function _claimBirthdayReward(childId) {
+  const btn = document.getElementById('birthday-claim-btn');
+  const statusEl = document.getElementById('birthday-status-msg');
+  if (btn) { btn.disabled = true; btn.innerHTML = rb('處理中') + '...🎁'; }
+  try {
+    const res = await fetch(`${API}?action=claimBirthdayReward&childId=${encodeURIComponent(childId)}`);
+    const data = await res.json();
+    const claimArea = document.getElementById('birthday-claim-area');
+    if (data.status === 'claimed') {
+      if (allData[childId]) allData[childId].balance = data.newBalance;
+      updateBalanceDisplay();
+      if (claimArea) claimArea.innerHTML = `<div style="font-size:14px;font-weight:800;color:var(--mint);">✅ ${rb('已加入 200 枚生日金幣！')}</div>`;
+      playAudioAsset('coin');
+      burst(100, '#ffb830');
+    } else if (data.status === 'already_claimed') {
+      if (claimArea) claimArea.innerHTML = `<div style="font-size:13px;color:var(--cocoa-soft);font-weight:700;">${rb('今年的生日禮物已經領取囉')} 💛</div>`;
+    } else if (data.status === 'not_birthday') {
+      // 測試模式強制顯示卡片、但今天其實不是生日時會走這條分支，不算錯誤，安靜提示即可
+      if (statusEl) statusEl.innerHTML = rb('（測試模式：今天不是真的生日，不會發放金幣）');
+      if (btn) { btn.disabled = false; btn.innerHTML = _BIRTHDAY_CLAIM_BTN_LABEL(); }
+    } else {
+      if (statusEl) statusEl.textContent = '⚠️ ' + (data.error || '處理失敗，請稍後再試'); // data.error 是後端純文字訊息，不含注音HTML，用textContent即可
+      if (btn) { btn.disabled = false; btn.innerHTML = _BIRTHDAY_CLAIM_BTN_LABEL(); } // 失敗可安全重試
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠️ 網路錯誤，請稍後再試';
+    if (btn) { btn.disabled = false; btn.innerHTML = _BIRTHDAY_CLAIM_BTN_LABEL(); }
+  }
+}
+
+// 小蛋糕重新開啟入口：今天是生日就顯示，讓使用者關掉卡片後仍能再次打開，不會真的錯過禮物
+function updateBirthdayFab() {
+  const fab = document.getElementById('birthday-fab');
+  if (!fab) return;
+  fab.style.display = isBirthdayToday(currentChild) ? 'flex' : 'none';
+}
+
 // ══════════════════════════════════════════════════════════════
 
 // ── 利率設定 ──
@@ -3750,6 +4109,14 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
+// <script> 執行到這裡時，瀏覽器不保證已經跑完第一次 layout，此時量到的 wrap.offsetWidth／
+// offsetHeight 有機率是 0（尤其行動瀏覽器、或分頁一開始不在前景），會讓 canvas 永久卡在 0 尺寸
+// ——之後除非使用者真的 resize 視窗，否則整個 burst() 粒子效果（拉炮紙花、金幣獎勵光等）都會
+// 完全不可見，且不會有任何錯誤訊息可供排查。這裡曾經改用 requestAnimationFrame 想延到下一次
+// 畫面繪製之後再量一次，但 rAF 在分頁不可見／非前景時可能永遠不會觸發，反而更不可靠；改用
+// window 的 load 事件（頁面完整載入、layout 一定已經跑完，且不受分頁可見度影響）重新量一次，
+// 兩者都做才是真的保險。
+window.addEventListener('load', resizeCanvas);
 
 // ── KEEP FAB + MODALS + TOAST VISUALLY "FIXED" USING SCROLL OFFSET ──
 // Since position:fixed breaks in iframe, we use position:absolute + scroll tracking
@@ -3968,6 +4335,7 @@ function playAudioAsset(key, options = {}) {
       audio.src = track.file;
     }
     audio.volume = track.volume * getCategoryVolume(track.category); // Ambient 分類沒有存過值，乘 1.0 等於不變
+    audio.muted = false; // 正式播放一律強制取消靜音，不管 priming 收尾時 muted 留在什麼狀態都以此為準
     audio.loop = !!track.loop;
     audio.onerror = () => {
       if (_audioAssetWarned.has(key)) return;
@@ -4117,7 +4485,10 @@ function setBackgroundMusicEnabled(enabled) {
 // 結束或失敗都會恢復音量」這幾件事，不建立 AudioManager／VoiceManager 或完整 Registry
 // 架構，也不搬移 Drive master 的音訊程式。9 段語音都是固定情境語音，不朗讀動態畫面
 // 文字，因此這裡不建立、也不需要 Dialogue 逐字文字 metadata。
-// 已播放紀錄只存在本頁 JavaScript 記憶體；重新整理或重新進站才重設。
+// 已播放紀錄只存在本頁 JavaScript 記憶體；重新整理或重新進站才重設。事件 key 預設等於
+// 音檔 key，但同一段音檔若對應兩個不同情境（例如熊貓違規紀錄的「媽媽端送出」跟「孩子端
+// 檢視」，或生日語音的蔓蔓／昊昊），呼叫端可以傳入不同的 eventKey，讓「這次網頁生命
+// 週期播過了嗎」各自獨立計算。
 const VOICE_ASSETS = {
   bearRestaurantWelcome:    { file: 'sounds/voice/bear_restaurant_welcome.mp3',    volume: 0.9 },
   bearOrderReceived:        { file: 'sounds/voice/bear_order_received.mp3',        volume: 0.9 },
@@ -4128,6 +4499,7 @@ const VOICE_ASSETS = {
   hedgehogBankWelcome:      { file: 'sounds/voice/hedgehog_bank_welcome.mp3',      volume: 0.9 },
   hedgehogWeeklyBalance:    { file: 'sounds/voice/hedgehog_weekly_balance.mp3',    volume: 0.9 },
   hedgehogSpendingReminder: { file: 'sounds/voice/hedgehog_spending_reminder.mp3', volume: 0.9 },
+  foxBirthday:              { file: 'sounds/voice/fox_birthday.mp3',               volume: 0.9 },
 };
 const _voiceAssetPool = {};
 let _voiceQueue = [];
@@ -4170,9 +4542,11 @@ function _reapplyCategoryVolume(category) {
   });
 }
 
-// 唯一的語音播放入口：安靜模式／Voice 關閉／冷卻中都會安靜跳過，不拋錯、不中斷呼叫端。
-// _voicePlayAttemptInFlight：同一句在「已排入佇列／正在嘗試播放，但還不知道是否真的成功」
-// 這段期間，避免連點或短時間內重入又再排一次；播放成功或失敗都會清掉這個標記。
+// 唯一的語音播放入口：安靜模式／Voice 關閉／這個事件本次網頁生命週期已經播過都會安靜跳過，
+// 不拋錯、不中斷呼叫端。
+// _voicePlayAttemptInFlight：同一個事件在「已排入佇列／正在嘗試播放，但還不知道是否真的成功」
+// 這段期間，避免連點或短時間內重入又再排一次；播放成功或失敗都會清掉這個標記。用 eventKey
+// 追蹤（預設等於 voiceKey），這樣同一段音檔在不同事件下可以各自獨立防重入。
 const _voicePlayAttemptInFlight = new Set();
 function playVoiceAsset(key, options = {}) {
   try {
@@ -4656,15 +5030,34 @@ function pandaOfficerSVG(size=72) {
   </svg>`;
 }
 
+// 生日語音是「每個孩子各自的」事件，不像 bearRestaurantWelcome 是整個 App 只播一次的通用歡迎詞：
+// enterRestaurant() 當下 currentChild 固定是預設的蔓蔓，如果真正壽星是昊昊，要等使用者切到昊昊分頁
+// （switchChild()）才第一次判斷到「今天是他生日」。用 childId 區分 eventKey，讓蔓蔓、昊昊的生日語音
+// 互不干擾，各自在本次網頁生命週期只播一次，也不會因為在兩個分頁間切來切去而重複播放。
+function _maybePlayBirthdayVoice(childId) {
+  if (isBirthdayToday(childId)) {
+    playVoiceAsset('foxBirthday', { eventKey: 'foxBirthday_' + childId });
+  }
+}
+
 // ── WELCOME PAGE ──
 async function enterRestaurant() {
   await _primeAudioForMobileAutoplay(); // iOS Safari 先做一次無聲解鎖；不觸碰正式音檔、不進語音佇列、不寫播放紀錄
   try { await _withTimeout(Tone.start().catch(() => {}), 400); } catch(e) {}
+  resizeCanvas(); // 保險重新量一次 #fx-canvas 尺寸——進餐廳這個當下版面一定已經穩定，避免萬一頁面剛載入時量到 0 尺寸，後續拉炮／金幣光等粒子效果整個看不到
   _hasEnteredRestaurant = true;
   updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
   playAudioAsset('welcomeEnter');
-  playVoiceAsset('bearRestaurantWelcome'); // Audio UX：歡迎語音本次完整載入期間成功播放一次
+  // 生日語音（狐狸媽媽）優先於一般歡迎語音，兩者互斥、不會同時播放。
+  if (isBirthdayToday(currentChild)) {
+    _maybePlayBirthdayVoice(currentChild);
+  } else {
+    playVoiceAsset('bearRestaurantWelcome'); // Audio UX：歡迎語音本次完整載入期間成功播放一次
+  }
+
+  updateBirthdayFab();
+  maybeShowBirthdayCard(currentChild);
 
   const wp = document.getElementById('welcome-page');
   wp.classList.add('fade-out');
