@@ -2422,9 +2422,20 @@ function _resolveContextVoiceDecision(childId, data) {
 // 如果瀏覽器擋掉自動播放（例如太晚才呼叫、沒有使用者互動關聯）導致沒真的播出來，
 // 就不標記，讓下次任何一次 renderMenu()（切分頁、切小孩、資料重新整理…）都能重新嘗試，
 // 不會因為第一次沒播成功就整天卡死、之後只能拿到安靜的一般語音。
+// window.__forestDebugOverlay(info)：只有 forest-preview 才會定義這個 hook，用來把每一步判斷
+// 即時顯示在畫面上一個小面板，方便沒有 DevTools 可用的裝置（iPad）直接截圖回報。正式站沒有定義
+// 這個變數，呼叫時只是安靜跳過，不影響任何行為。
+function _debugOverlay(info) {
+  try { window.__forestDebugOverlay && window.__forestDebugOverlay(info); } catch(e) {}
+}
+
 async function _maybePlayMenuContextVoice(childId, data) {
-  if (!data) return;
+  if (!data) {
+    _debugOverlay({ stage: 'no-data', childId });
+    return;
+  }
   if (_hasContextVoiceBeenJudgedToday(childId)) {
+    _debugOverlay({ stage: 'already-judged', childId });
     playVoiceAsset('bearRestaurantWelcome'); // 今天已經判斷過特殊語音，一律回退成一般迎賓語音
     return;
   }
@@ -2435,6 +2446,7 @@ async function _maybePlayMenuContextVoice(childId, data) {
   }
 
   const decision = _resolveContextVoiceDecision(childId, data);
+  _debugOverlay({ stage: 'decision', childId, tier: decision.tier, label: decision.label });
   let played = false;
 
   // 1. 生日：沿用既有生日語音／生日卡流程，不在這裡碰 bear-speech 泡泡（生日卡本身就是專屬呈現）
@@ -2470,6 +2482,7 @@ async function _maybePlayMenuContextVoice(childId, data) {
     });
   }
 
+  _debugOverlay({ stage: 'played-result', childId, tier: decision.tier, played, file: VOICE_ASSETS.contextHoliday.file || VOICE_ASSETS.contextWeather.file });
   if (played) _markContextVoiceJudgedToday(childId);
 }
 
