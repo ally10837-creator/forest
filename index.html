@@ -130,6 +130,28 @@ body {
 .order-btn:active { transform:translate(2px,2px); box-shadow:none; }
 .order-btn:disabled { background:#ddd; color:#999; cursor:not-allowed; box-shadow:none; border-color:#ccc; }
 
+/* ── PET (動物夥伴) — 領養邂逅畫面 ── */
+.pet-encounter {
+  margin: 24px 16px; background: white; border: var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 22px 18px; text-align: center;
+}
+.pet-encounter-portrait { width: 140px; margin: 0 auto 14px; animation: petShy 2.4s ease-in-out infinite; }
+.pet-encounter-portrait img { width: 100%; display: block; filter: saturate(0.7) brightness(0.98); }
+@keyframes petShy {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50%      { transform: translateY(-6px) rotate(-2deg); }
+}
+.pet-encounter-text { font-size: 14px; color: var(--cocoa); line-height: 1.7; margin-bottom: 18px; }
+.pet-encounter-actions { display: flex; gap: 10px; justify-content: center; }
+.pet-adopt-btn, .pet-decline-btn {
+  border: 2px solid var(--cocoa); border-radius: 12px; padding: 10px 18px;
+  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  box-shadow: var(--shadow-sm); transition: all 0.1s;
+}
+.pet-adopt-btn { background: var(--rose); color: white; }
+.pet-decline-btn { background: white; color: var(--cocoa-soft); }
+.pet-adopt-btn:active, .pet-decline-btn:active { transform: translate(2px,2px); box-shadow: none; }
+
 /* ── PET (動物夥伴) ── */
 .pet-card {
   margin: 0 14px 16px; background: white; border: var(--border); border-radius: var(--radius);
@@ -1152,25 +1174,43 @@ body.audio-settings-open { overflow: hidden; }
 
   <!-- SUB TAB: PET (動物夥伴) -->
   <div id="sub-pet" class="sub-panel">
-    <div class="section-title">🐱 動物夥伴 <span class="pill" id="pet-stage-pill">載入中</span></div>
-    <div class="pet-card">
-      <div class="pet-roam">
-        <div class="pet-walk-wrap">
-          <img class="pet-walk-sprite frame-a" src="img/pet/cat_walk_a.png" alt="">
-          <img class="pet-walk-sprite frame-b" src="img/pet/cat_walk_b.png" alt="">
-        </div>
+
+    <!-- 尚未領養：撿到小動物的邂逅畫面 -->
+    <div id="pet-encounter" class="pet-encounter">
+      <div class="pet-encounter-portrait">
+        <img src="img/pet/cat_portrait.png" alt="一隻迷路的小貓">
       </div>
-      <div class="pet-stage" id="pet-stage" onclick="petTouch()">
-        <img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪">
+      <div class="pet-encounter-text">
+        你在森林餐廳後院發現了一隻迷路的小貓，牠怯生生地看著你……<br>要收留牠嗎？
       </div>
-      <div class="pet-hint" id="pet-hint">摸摸貓咪，或餵牠吃點心吧！</div>
-      <div class="pet-exp-bar-wrap">
-        <div class="pet-exp-bar"><div class="pet-exp-fill" id="pet-exp-fill"></div></div>
-        <div class="pet-exp-label" id="pet-exp-label">經驗值 0</div>
+      <div class="pet-encounter-actions">
+        <button class="pet-adopt-btn" onclick="adoptPet()">💕 領養牠</button>
+        <button class="pet-decline-btn" onclick="declinePet()">先不要</button>
       </div>
     </div>
-    <div class="section-title">🍖 今日點心 <span class="pill" id="pet-feed-count">0/3</span></div>
-    <div class="pet-food-grid" id="pet-food-grid"></div>
+
+    <!-- 已領養：正常互動畫面 -->
+    <div id="pet-main" style="display:none;">
+      <div class="section-title">🐱 動物夥伴 <span class="pill" id="pet-stage-pill">載入中</span></div>
+      <div class="pet-card">
+        <div class="pet-roam">
+          <div class="pet-walk-wrap">
+            <img class="pet-walk-sprite frame-a" src="img/pet/cat_walk_a.png" alt="">
+            <img class="pet-walk-sprite frame-b" src="img/pet/cat_walk_b.png" alt="">
+          </div>
+        </div>
+        <div class="pet-stage" id="pet-stage" onclick="petTouch()">
+          <img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪">
+        </div>
+        <div class="pet-hint" id="pet-hint">摸摸貓咪，或餵牠吃點心吧！</div>
+        <div class="pet-exp-bar-wrap">
+          <div class="pet-exp-bar"><div class="pet-exp-fill" id="pet-exp-fill"></div></div>
+          <div class="pet-exp-label" id="pet-exp-label">經驗值 0</div>
+        </div>
+      </div>
+      <div class="section-title">🍖 今日點心 <span class="pill" id="pet-feed-count">0/3</span></div>
+      <div class="pet-food-grid" id="pet-food-grid"></div>
+    </div>
   </div>
 
   <!-- Cart FAB -->
@@ -1842,6 +1882,23 @@ const PET_STAGES = [
 ];
 
 function petStorageKey(childId) { return 'forest_pet_state_' + childId; }
+function petAdoptedKey(childId)  { return 'forest_pet_adopted_' + childId; }
+
+function isPetAdopted(childId) {
+  return localStorage.getItem(petAdoptedKey(childId)) === 'true';
+}
+
+function adoptPet() {
+  const childId = currentChild;
+  localStorage.setItem(petAdoptedKey(childId), 'true');
+  savePetState(childId, getPetState(childId)); // 建立初始寵物資料
+  showToast('🎉 恭喜你領養了一隻小貓！', 'success');
+  renderPet();
+}
+
+function declinePet() {
+  showToast('牠還在附近徘徊，隨時歡迎你回來領養牠 🐾', 'warn');
+}
 
 function getPetState(childId) {
   let s = null;
@@ -1874,6 +1931,11 @@ function petStageInfoForExp(exp) {
 
 function renderPet() {
   const childId = currentChild;
+  const adopted = isPetAdopted(childId);
+  document.getElementById('pet-encounter').style.display = adopted ? 'none' : '';
+  document.getElementById('pet-main').style.display = adopted ? '' : 'none';
+  if (!adopted) return;
+
   const s = getPetState(childId);
   const stageInfo = petStageInfoForExp(s.exp_points);
   s.stage = stageInfo.stage;
