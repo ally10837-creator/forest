@@ -171,15 +171,19 @@ body {
 
 /* ── PET (動物夥伴) ── */
 /* ── 森林小屋房間：貓咪自由走動/坐/趴睡/理毛的生活場景 ── */
-.pet-room-outer { margin: 0 14px 10px; }
+.pet-room-outer {
+  margin: 0 max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left));
+}
 .pet-room {
-  position: relative; aspect-ratio: 1312 / 816; max-height: 320px; overflow: hidden;
+  position: relative; width: 100%; aspect-ratio: 1312 / 816; max-height: none; overflow: hidden;
   border: var(--border); border-radius: var(--radius);
   background-image: url('img/pet/cabin_bg_v2.png'); background-size: cover; background-position: center;
   box-shadow: var(--shadow-sm);
 }
 .pet-room-wrap {
-  position: absolute; bottom: 20px; left: 40%; width: 56px; height: 56px; cursor: pointer; z-index: 2;
+  position: absolute; bottom: clamp(20px, 3vw, 32px); left: 40%;
+  width: clamp(56px, 15.5%, 116px); height: auto; aspect-ratio: 1 / 1;
+  cursor: pointer; z-index: 2;
 }
 /* 貓咪腳下的接地影子——沒有它貓咪看起來會像貼在背景上面，浮浮的 */
 .pet-room-wrap::after {
@@ -2069,12 +2073,12 @@ function showPage(page) {
   if (page === 'mama' && mamaUnlocked) loadMamaTab(currentMamaTab);
   if (page === 'child') {
     updateCartFab();
-    if (allData[currentChild]) {
+    if (allData[currentChild] || currentSubTab === 'forestpet') {
       switchSubTab(currentSubTab, true);
     }
-    if (!allData[currentChild]) {
+    if (!allData[currentChild] && currentSubTab !== 'forestpet') {
       loadAll('showPage-child-missing-data');
-    } else {
+    } else if (currentSubTab !== 'forestpet') {
       const cacheTime = Number(sessionStorage.getItem('menu_cache_time') || 0);
       const cacheAge  = Date.now() - cacheTime;
       if (cacheAge > 5 * 60 * 1000) loadAll('showPage-cache-stale');
@@ -2104,7 +2108,13 @@ async function switchChild(id) {
   // 生日／節日／天氣／一般語音的優先序判斷已經統一移到 switchSubTab('menu') 觸發的
   // _maybePlayMenuContextVoice()，這裡不再直接播生日語音，避免跟菜單分頁的判斷重疊。
   switchSubTab(currentSubTab, true);
-  await loadAll('switchChild');             // 再重新抓取最新資料，三個頁籤（餐館/家事/我的訂單）一起同步更新
+  if (currentSubTab === 'forestpet') {
+    // switchSubTab 已啟動同一孩子的最小狀態請求；這裡共用該 single-flight，
+    // 不再另外啟動雙孩子完整 loadAll。
+    await refreshPetStatusOnly_(id, { reason: 'switch-child-forestpet' });
+  } else {
+    await loadAll('switchChild');           // 非寵物頁維持既有完整資料同步
+  }
 }
 
 // ── SUB TABS ──
@@ -2126,26 +2136,22 @@ function switchSubTab(tab, userInitiated = true) {
   renderSubTab(tab, { userInitiated });
   if (tab === 'forestpet') {
     const entryChild = currentChild;
-    const before = classifyServerPet_(allData[entryChild]);
-    if (!allData[entryChild] || before.kind === 'unknown') {
-      void loadAll('forestpet-enter').then(loaded => {
-        if (loaded && currentChild === entryChild && currentSubTab === 'forestpet') onEnterForestPet_();
-      });
-    } else {
-      onEnterForestPet_();
-    }
+    // renderSubTab 已先以可信快取畫小屋；接著只查目前孩子的最小 pet view。
+    void refreshPetStatusOnly_(entryChild, { reason: 'forestpet-enter' }).then(outcome => {
+      if (outcome.ok && currentChild === entryChild && currentSubTab === 'forestpet') onEnterForestPet_();
+    });
   }
 }
 
 function renderSubTab(tab, options = {}) {
   const data = allData[currentChild];
+  if (tab === 'forestpet') { renderForestPet(data || {}); return; }
   if (!data) return;
   if (tab === 'menu')    renderMenu(data);
   if (tab === 'chores')  renderChores(data);
   if (tab === 'orders')  renderMyOrders(data);
   if (tab === 'penalty') renderPenaltyList(data, options);
   if (tab === 'bank')    renderBank();
-  if (tab === 'forestpet') renderForestPet(data);
 }
 
 // ══════════════════════════════════════════════
@@ -2319,6 +2325,104 @@ function syncAllServerPetCaches_() {
   ['candice', 'harris'].forEach(childId => syncServerPetCache_(childId, classifyServerPet_(allData[childId])));
 }
 
+// P1：寵物頁只讀目前孩子的最小 public view，不再為 pet_status 等待 loadAll()。
+// 每個孩子同時最多一個請求；手動重試會先 abort 舊請求，較舊回應也不能覆蓋新狀態。
+const PET_STATUS_TIMEOUT_MS = 8000;
+const _petStatusRequests_ = Object.create(null);
+const _petStatusUi_ = Object.create(null);
+let _petStatusRequestSeq_ = 0;
+
+function setPetStatusUi_(childId, status, message) {
+  _petStatusUi_[childId] = { status, message: message || '' };
+  if (currentChild !== childId || currentSubTab !== 'forestpet') return;
+  const statusEl = document.getElementById('pet-room-status');
+  if (statusEl && message) statusEl.textContent = message;
+}
+
+function applyPetStatusUi_(childId) {
+  const state = _petStatusUi_[childId];
+  const statusEl = document.getElementById('pet-room-status');
+  if (state && statusEl && state.message) statusEl.textContent = state.message;
+}
+
+function cancelPetStatusRequest_(childId) {
+  const active = _petStatusRequests_[childId];
+  if (active) active.controller.abort();
+}
+
+function petStatusFailureMessage_(error, hasCachedPet) {
+  if (error === 'invalid_token') return '裝置授權已失效，請媽媽重新連結這台裝置。';
+  if (error === 'invalid_data') return '寵物資料不一致，需要媽媽處理。';
+  if (error === 'timeout') {
+    return hasCachedPet ? '網路回應較慢，先顯示上次的寵物資料。' : '網路回應較慢，請稍後重新確認。';
+  }
+  if (error === 'aborted') return hasCachedPet ? '正在更新寵物狀態……' : '正在重新確認寵物狀態……';
+  return hasCachedPet ? '網路暫時中斷，先顯示上次的寵物資料。' : '網路暫時中斷，請稍後重新確認。';
+}
+
+async function refreshPetStatusOnly_(childId, options = {}) {
+  const reason = options.reason || 'unspecified';
+  const cancelPrevious = options.cancelPrevious === true;
+  const existing = _petStatusRequests_[childId];
+  if (existing && !cancelPrevious) return existing.promise;
+  if (existing) existing.controller.abort();
+  // 寵物狀態確認的優先權高於完整背景載入；取消舊 loadAll，避免同一時間
+  // 還有另一組包含 pet_status 的雙孩子請求在背景繼續等待或覆蓋結果。
+  if (_loadAllAbortController_) _loadAllAbortController_.abort();
+
+  const controller = new AbortController();
+  const requestId = ++_petStatusRequestSeq_;
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, PET_STATUS_TIMEOUT_MS);
+  const hasCachedPet = !!readServerPetCache_(childId);
+  setPetStatusUi_(childId, 'loading',
+    hasCachedPet ? '正在更新寵物狀態……（先顯示上次資料）' : '正在確認寵物狀態……');
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(API + '?action=getPetStatus&childId=' + encodeURIComponent(childId), {
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      if (!res.ok) throw new Error('http_' + res.status);
+      const data = await res.json();
+      const active = _petStatusRequests_[childId];
+      if (!active || active.requestId !== requestId) return { ok: false, error: 'stale' };
+      const classified = classifyServerPet_(data);
+      if (classified.kind !== 'present' && classified.kind !== 'absent') {
+        setPetStatusUi_(childId, 'error', petStatusFailureMessage_('invalid_data', hasCachedPet));
+        if (currentChild === childId && currentSubTab === 'forestpet') renderForestPet(allData[childId] || {});
+        return { ok: false, error: 'invalid_data', kind: classified.kind };
+      }
+      allData[childId] = {
+        ...(allData[childId] || {}),
+        pet_status: data.pet_status,
+        pet: data.pet
+      };
+      syncServerPetCache_(childId, classified);
+      setPetStatusUi_(childId, 'ready', '');
+      if (currentChild === childId && currentSubTab === 'forestpet') renderForestPet(allData[childId]);
+      return { ok: true, kind: classified.kind, pet: classified.pet || null };
+    } catch (e) {
+      const active = _petStatusRequests_[childId];
+      if (!active || active.requestId !== requestId) return { ok: false, error: 'stale' };
+      const error = controller.signal.aborted ? (timedOut ? 'timeout' : 'aborted') : 'network_error';
+      setPetStatusUi_(childId, 'error', petStatusFailureMessage_(error, hasCachedPet));
+      if (currentChild === childId && currentSubTab === 'forestpet') renderForestPet(allData[childId] || {});
+      return { ok: false, error };
+    } finally {
+      clearTimeout(timeoutId);
+      if (_petStatusRequests_[childId]?.requestId === requestId) delete _petStatusRequests_[childId];
+      _debugOverlay({ stage: 'pet-status-settled', requestId, reason, childId });
+    }
+  })();
+  _petStatusRequests_[childId] = { requestId, controller, promise };
+  return promise;
+}
+
 function petSetupGuardKey_(childId) { return 'forest_pet_setup_guard_' + childId; }
 function getPetSetupGuard_(childId) { return localStorage.getItem(petSetupGuardKey_(childId)) || ''; }
 function setPetSetupGuard_(childId, value) { localStorage.setItem(petSetupGuardKey_(childId), String(value || 'blocked')); }
@@ -2372,9 +2476,13 @@ function showPetSetupStatus_(message) {
 
 async function handleDeviceLinked_(session) {
   showPetSetupStatus_('裝置已連結，正在確認寵物狀態……');
-  const loaded = await loadAll('pairing-complete');
+  const outcome = await refreshPetStatusOnly_(session.childId, {
+    reason: 'pairing-complete',
+    cancelPrevious: true
+  });
   if (!isPetSetupSessionCurrent_(session)) return;
-  const classified = loaded ? classifyServerPet_(allData[session.childId]) : { kind: 'unknown' };
+  if (outcome.error === 'stale' || outcome.error === 'aborted') return;
+  const classified = outcome.ok ? classifyServerPet_(allData[session.childId]) : { kind: 'unknown' };
   if (classified.kind === 'present') {
     closePetSetup();
     showToast('✅ 這台裝置已連結，歡迎回來！', 'success');
@@ -2389,9 +2497,16 @@ async function handleDeviceLinked_(session) {
     document.getElementById('pet-setup-name-err').textContent = '';
     return;
   }
-  showPetSetupStatus_(classified.kind === 'invalid'
-    ? '裝置已連結，但寵物資料需要人工核對。請聯絡管理員。'
-    : '裝置已連結，但目前無法確認寵物狀態。請重新確認。');
+  const message = outcome.ok && classified.kind === 'absent'
+    ? '寵物狀態與裝置連結資料不一致，需要媽媽處理。'
+    : outcome.error === 'invalid_token'
+    ? '裝置授權已失效，請媽媽重新連結這台裝置。'
+    : outcome.error === 'invalid_data'
+      ? '寵物資料不一致，需要媽媽處理。'
+      : outcome.error === 'timeout'
+        ? '網路回應較慢，請稍後重新確認。'
+        : '網路暫時中斷，請稍後重新確認。';
+  showPetSetupStatus_(message);
 }
 
 async function retryPetStatusAfterLink_() {
@@ -2400,7 +2515,10 @@ async function retryPetStatusAfterLink_() {
   const btn = document.getElementById('pet-setup-status-retry-btn');
   if (btn.disabled) return;
   btn.disabled = true;
-  try { await handleDeviceLinked_(session); }
+  try {
+    cancelPetStatusRequest_(session.childId);
+    await handleDeviceLinked_(session);
+  }
   finally { btn.disabled = false; }
 }
 
@@ -2463,9 +2581,12 @@ function normalizeInitializePetResult_(res) {
 }
 
 async function recoverExistingPetAfterAlreadyHas_(childId, session) {
-  const loaded = await loadAll('already-has-pet-recovery');
+  const outcome = await refreshPetStatusOnly_(childId, {
+    reason: 'already-has-pet-recovery',
+    cancelPrevious: true
+  });
   if (session && !isPetSetupSessionCurrent_(session)) return { kind: 'stale' };
-  const classified = loaded ? classifyServerPet_(allData[childId]) : { kind: 'unknown' };
+  const classified = outcome.ok ? classifyServerPet_(allData[childId]) : { kind: 'unknown' };
   if (classified.kind !== 'present') {
     return { kind: 'blocked', message: '無法安全確認既有寵物，已保留待確認紀錄，請聯絡管理員' };
   }
@@ -2478,9 +2599,12 @@ async function recoverExistingPetAfterAlreadyHas_(childId, session) {
 }
 
 async function finishPetSetupSuccess_(childId, session) {
-  const loaded = await loadAll('initialize-pet-success');
+  const outcome = await refreshPetStatusOnly_(childId, {
+    reason: 'initialize-pet-success',
+    cancelPrevious: true
+  });
   if (session && !isPetSetupSessionCurrent_(session)) return false;
-  const classified = loaded ? classifyServerPet_(allData[childId]) : { kind: 'unknown' };
+  const classified = outcome.ok ? classifyServerPet_(allData[childId]) : { kind: 'unknown' };
   if (classified.kind !== 'present') {
     showPetSetupStatus_('領養請求已完成，但尚未能由後端重新確認。已保留原交易，請重新確認。');
     return false;
@@ -3834,7 +3958,8 @@ function renderForestPet(data) {
   }
   const pet = classified.kind === 'present' ? classified.pet : cached;
   if (!pet) {
-    el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-text">正在確認後端寵物狀態……<br>尚未確認前不會開始新的領養。</div></div>`;
+    const statusMessage = _petStatusUi_[childId]?.message || '正在確認後端寵物狀態……';
+    el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-text">${statusMessage}<br>尚未確認前不會開始新的領養。</div></div>`;
     return;
   }
   capturePetZoomBeforeRender_();
@@ -3853,6 +3978,7 @@ function renderForestPet(data) {
   }
   renderPetFood();
   startPetRoom();
+  applyPetStatusUi_(childId);
   // 驚喜樹／背景資料刷新會重建整個 forestpet-content；商店或餵食放大頁
   // 若原本正開著，必須恢復新 modal 與目前狀態，不能把使用者踢出去。
   restorePetShopAfterRender_();
@@ -4681,7 +4807,11 @@ function petBath() {
 async function manualRefreshChild() {
   const btn = document.getElementById('refresh-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '🔄 更新中...'; }
-  const loaded = await loadAll('manual-refresh');
+  const petPage = currentSubTab === 'forestpet';
+  const petOutcome = petPage
+    ? await refreshPetStatusOnly_(currentChild, { reason: 'manual-refresh', cancelPrevious: true })
+    : null;
+  const loaded = petPage ? petOutcome.ok : await loadAll('manual-refresh');
   let treeLoaded = true;
   if (loaded && currentSubTab === 'forestpet' && classifyServerPet_(allData[currentChild]).kind === 'present' && localStorage.getItem(petDeviceTokenKey(currentChild))) {
     treeLoaded = await refreshTreeStatus_(currentChild, { reason: 'manual-refresh' });
@@ -4921,12 +5051,7 @@ async function saveDriveToSheet() {
 const LOAD_ALL_TIMEOUT_MS = 8000;
 let _loadAllInFlightPromise = null;
 let _loadAllRequestSeq = 0;
-
-function _raceTimeout(promise, ms) {
-  let timer;
-  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('__TIMEOUT__'), ms); });
-  return Promise.race([promise.then(v => { clearTimeout(timer); return v; }), timeout]);
-}
+let _loadAllAbortController_ = null;
 
 async function loadAll(reason = 'unspecified') {
   if (_loadAllInFlightPromise) {
@@ -4945,9 +5070,26 @@ async function _loadAllAttempt(reason, isRetry) {
   const requestId = ++_loadAllRequestSeq;
   const startedAt = performance.now();
   _debugOverlay({ stage: 'loadall-start', requestId, reason, isRetry, currentChildId: currentChild });
-  const outcome = await _raceTimeout(_loadAllFetchAndApply(), LOAD_ALL_TIMEOUT_MS);
+  const controller = new AbortController();
+  _loadAllAbortController_ = controller;
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, LOAD_ALL_TIMEOUT_MS);
+  let outcome;
+  try {
+    outcome = await _loadAllFetchAndApply(controller.signal);
+  } finally {
+    clearTimeout(timeoutId);
+    if (_loadAllAbortController_ === controller) _loadAllAbortController_ = null;
+  }
   const durationMs = (performance.now() - startedAt) | 0;
-  if (outcome === '__TIMEOUT__') {
+  if (outcome === 'aborted') {
+    if (!timedOut) {
+      _debugOverlay({ stage: 'loadall-aborted', requestId, reason, durationMs });
+      return false;
+    }
     _debugOverlay({ stage: 'loadall-timeout', requestId, reason, durationMs });
     if (!isRetry && _hasEnteredRestaurant && !_hasContextVoiceBeenJudgedToday(currentChild)) {
       _debugOverlay({ stage: 'loadall-auto-retry', requestId, reason });
@@ -4967,11 +5109,11 @@ async function _loadAllAttempt(reason, isRetry) {
 
 // 純粹「發請求、套用結果」，不處理 timeout／重試／single-flight——那些是上面 _loadAllAttempt
 // 的責任。回傳 'ok' 或 'failed'，不 throw，讓呼叫端統一處理。
-async function _loadAllFetchAndApply() {
+async function _loadAllFetchAndApply(signal) {
   try {
     const [cRes, hRes] = await Promise.all([
-      fetch(API + '?user=candice'),
-      fetch(API + '?user=harris')
+      fetch(API + '?user=candice', { signal }),
+      fetch(API + '?user=harris', { signal })
     ]);
     const cText = await cRes.text();
     const hText = await hRes.text();
@@ -5026,6 +5168,7 @@ async function _loadAllFetchAndApply() {
     }
     return 'ok';
   } catch(e) {
+    if (signal?.aborted || e?.name === 'AbortError') return 'aborted';
     return 'failed';
   }
 }
@@ -8483,7 +8626,13 @@ setInterval(async () => {
   // 只在孩子頁面時更新，不打擾媽媽後台
   const childPageActive = document.getElementById('child-page').classList.contains('active');
   if (childPageActive) {
-    await loadAll();
+    if (currentSubTab === 'forestpet') {
+      const childId = currentChild;
+      const outcome = await refreshPetStatusOnly_(childId, { reason: 'background-refresh' });
+      if (outcome.ok && currentChild === childId && currentSubTab === 'forestpet') onEnterForestPet_();
+    } else {
+      await loadAll();
+    }
   }
   updateBackgroundAudio(); // 不限定頁面，讓背景音軌不因切換孩子/子分頁/媽媽後台而停止
 }, 30000);
