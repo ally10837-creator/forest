@@ -1950,6 +1950,163 @@ let currentMamaTab = "approve";
 let mamaUnlocked = false;
 let localChoreStatus = {}; // choreId_childId → status (local until API confirms)
 
+// P1.3：孩子頁面的菜單／家事／訂單／違規／銀行各自獨立讀取。
+// 媽媽後台仍使用舊 loadAll()，避免這輪擴大到後台寫入與審核流程。
+const CHILD_SECTION_IDS = ['menu', 'chores', 'orders', 'penalty', 'bank'];
+const CHILD_SECTION_TIMEOUT_MS = 12000;
+const CHILD_SECTION_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+const _childSectionInFlight_ = new Map();
+const _childSectionLoadedAt_ = new Map();
+let _childSectionRequestSeq_ = 0;
+
+function childSectionKey_(childId, section) { return childId + ':' + section; }
+function childSectionCacheKey_(childId, section) { return 'forest_child_section_v1_' + childId + '_' + section; }
+
+function readChildSectionCache_(childId, section) {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(childSectionCacheKey_(childId, section)) || 'null');
+    if (!parsed || parsed.childId !== childId || parsed.section !== section || !parsed.data ||
+        !Number.isFinite(Number(parsed.savedAt))) return null;
+    return parsed;
+  } catch (e) { return null; }
+}
+
+function writeChildSectionCache_(childId, section, data) {
+  try {
+    sessionStorage.setItem(childSectionCacheKey_(childId, section), JSON.stringify({
+      childId, section, data, savedAt: Date.now()
+    }));
+  } catch (e) { /* Safari 儲存空間不足不得影響線上資料 */ }
+}
+
+function invalidateChildSectionCache_(childId, sections) {
+  (Array.isArray(sections) ? sections : [sections]).forEach(section => {
+    try { sessionStorage.removeItem(childSectionCacheKey_(childId, section)); } catch (e) {}
+  });
+}
+
+function mergeChildSectionData_(childId, section, data) {
+  allData[childId] = Object.assign({}, allData[childId] || {}, data || {});
+  _childSectionLoadedAt_.set(childSectionKey_(childId, section), Date.now());
+  updateBalanceDisplay();
+}
+
+function hasChildSectionData_(childId, section) {
+  return _childSectionLoadedAt_.has(childSectionKey_(childId, section));
+}
+
+function setChildSectionStatus_(section, message, tone) {
+  const panel = document.getElementById('sub-' + section);
+  if (!panel) return;
+  let status = document.getElementById('child-section-status-' + section);
+  if (!message) {
+    if (status) status.remove();
+    return;
+  }
+  if (!status) {
+    status = document.createElement('div');
+    status.id = 'child-section-status-' + section;
+    status.setAttribute('role', 'status');
+    status.style.cssText = 'margin:8px 12px;padding:8px 12px;border-radius:10px;font-size:13px;font-weight:700;text-align:center;';
+    panel.insertBefore(status, panel.firstChild);
+  }
+  const palette = tone === 'warn'
+    ? ['#fff7df', '#a46800', '#f0c56a']
+    : ['#eef7ff', '#31658f', '#acd4f2'];
+  status.style.background = palette[0];
+  status.style.color = palette[1];
+  status.style.border = '1px solid ' + palette[2];
+  status.textContent = message;
+}
+
+function showChildSectionLoadingPlaceholder_(section) {
+  if (section === 'menu') {
+    const count = document.getElementById('menu-count');
+    const grid = document.getElementById('menu-grid');
+    if (count) count.textContent = '載入中';
+    if (grid) grid.innerHTML = '<div class="empty">🍽️ 正在載入菜單…</div>';
+  } else if (section === 'chores') {
+    const count = document.getElementById('chore-count');
+    const list = document.getElementById('chore-list');
+    if (count) count.textContent = '載入中';
+    if (list) list.innerHTML = '<div class="empty">🦊 正在載入家事…</div>';
+  } else if (section === 'orders') {
+    const list = document.getElementById('orders-list');
+    if (list) list.innerHTML = '<div class="empty">🧾 正在載入訂單…</div>';
+  } else if (section === 'penalty') {
+    const count = document.getElementById('penalty-count');
+    const list = document.getElementById('penalty-list');
+    if (count) count.textContent = '載入中';
+    if (list) list.innerHTML = '<div class="empty">🐼 正在載入紀錄…</div>';
+  } else if (section === 'bank') {
+    const summary = document.getElementById('bank-summary');
+    if (summary) summary.innerHTML = '<div class="empty">🏦 正在載入銀行帳本…</div>';
+  }
+}
+
+function renderChildSectionIfCurrent_(childId, section) {
+  if (currentChild !== childId || currentSubTab !== section) return;
+  renderSubTab(section);
+}
+
+async function loadChildSection_(section, childId = currentChild, options = {}) {
+  if (!CHILD_SECTION_IDS.includes(section) || !MEMBERS[childId]) return false;
+  const key = childSectionKey_(childId, section);
+  if (_childSectionInFlight_.has(key)) return _childSectionInFlight_.get(key);
+
+  const task = (async () => {
+    const cached = readChildSectionCache_(childId, section);
+    const cacheFresh = cached && Date.now() - Number(cached.savedAt) <= CHILD_SECTION_CACHE_MAX_AGE_MS;
+    if (cached && !hasChildSectionData_(childId, section)) {
+      mergeChildSectionData_(childId, section, cached.data);
+      renderChildSectionIfCurrent_(childId, section);
+    }
+    const hadData = hasChildSectionData_(childId, section);
+    if (!hadData) showChildSectionLoadingPlaceholder_(section);
+    if (!options.silent || !hadData) {
+      setChildSectionStatus_(section, hadData ? '正在更新最新資料…' : '正在載入資料…', 'info');
+    }
+
+    if (cacheFresh && !options.force) {
+      setChildSectionStatus_(section, '', 'info');
+      return true;
+    }
+
+    const requestId = ++_childSectionRequestSeq_;
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, CHILD_SECTION_TIMEOUT_MS);
+    try {
+      const url = API + '?action=getChildSection&childId=' + encodeURIComponent(childId) +
+        '&section=' + encodeURIComponent(section);
+      const response = await fetch(url, { signal: controller.signal });
+      const result = await response.json();
+      if (!result || result.success !== true || result.childId !== childId ||
+          result.section !== section || !result.data || typeof result.data !== 'object') {
+        throw new Error('invalid_section_response');
+      }
+      if (requestId !== _childSectionRequestSeq_ && currentChild !== childId) return false;
+      mergeChildSectionData_(childId, section, result.data);
+      writeChildSectionCache_(childId, section, result.data);
+      setChildSectionStatus_(section, '', 'info');
+      renderChildSectionIfCurrent_(childId, section);
+      return true;
+    } catch (error) {
+      const stillHasData = hasChildSectionData_(childId, section);
+      const message = timedOut || error?.name === 'AbortError'
+        ? (stillHasData ? '伺服器回應較慢，先顯示上次資料' : '伺服器回應較慢，請稍後重試')
+        : (stillHasData ? '暫時無法更新，先顯示上次資料' : '暫時無法載入，請稍後重試');
+      setChildSectionStatus_(section, message, 'warn');
+      return false;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  })();
+  _childSectionInFlight_.set(key, task);
+  try { return await task; }
+  finally { if (_childSectionInFlight_.get(key) === task) _childSectionInFlight_.delete(key); }
+}
+
 // 目前孩子的購物車（shorthand）
 function getCart() { return carts[currentChild]; }
 function setCart(val) { carts[currentChild] = val; }
@@ -2073,16 +2230,7 @@ function showPage(page) {
   if (page === 'mama' && mamaUnlocked) loadMamaTab(currentMamaTab);
   if (page === 'child') {
     updateCartFab();
-    if (allData[currentChild] || currentSubTab === 'forestpet') {
-      switchSubTab(currentSubTab, true);
-    }
-    if (!allData[currentChild] && currentSubTab !== 'forestpet') {
-      loadAll('showPage-child-missing-data');
-    } else if (currentSubTab !== 'forestpet') {
-      const cacheTime = Number(sessionStorage.getItem('menu_cache_time') || 0);
-      const cacheAge  = Date.now() - cacheTime;
-      if (cacheAge > 5 * 60 * 1000) loadAll('showPage-cache-stale');
-    }
+    switchSubTab(currentSubTab, true);
   }
 }
 
@@ -2113,7 +2261,7 @@ async function switchChild(id) {
     // 不再另外啟動雙孩子完整 loadAll。
     await refreshPetStatusOnly_(id, { reason: 'switch-child-forestpet' });
   } else {
-    await loadAll('switchChild');           // 非寵物頁維持既有完整資料同步
+    await loadChildSection_(currentSubTab, id, { reason: 'switch-child', force: true });
   }
 }
 
@@ -2140,13 +2288,19 @@ function switchSubTab(tab, userInitiated = true) {
     void refreshPetStatusOnly_(entryChild, { reason: 'forestpet-enter' }).then(outcome => {
       if (outcome.ok && currentChild === entryChild && currentSubTab === 'forestpet') onEnterForestPet_();
     });
+  } else {
+    void loadChildSection_(tab, currentChild, { reason: 'switch-subtab' });
   }
 }
 
 function renderSubTab(tab, options = {}) {
   const data = allData[currentChild];
   if (tab === 'forestpet') { renderForestPet(data || {}); return; }
-  if (!data) return;
+  // 「尚未載入」不等於「真的是 0 筆」；只有分區 API 成功後才能進入空清單判斷。
+  if (!data || !hasChildSectionData_(currentChild, tab)) {
+    showChildSectionLoadingPlaceholder_(tab);
+    return;
+  }
   if (tab === 'menu')    renderMenu(data);
   if (tab === 'chores')  renderChores(data);
   if (tab === 'orders')  renderMyOrders(data);
@@ -5122,7 +5276,9 @@ async function manualRefreshChild() {
   const petOutcome = petPage
     ? await refreshPetStatusOnly_(currentChild, { reason: 'manual-refresh', cancelPrevious: true })
     : null;
-  const loaded = petPage ? petOutcome.ok : await loadAll('manual-refresh');
+  const loaded = petPage
+    ? petOutcome.ok
+    : await loadChildSection_(currentSubTab, currentChild, { reason: 'manual-refresh', force: true });
   let treeLoaded = true;
   if (loaded && currentSubTab === 'forestpet' && classifyServerPet_(allData[currentChild]).kind === 'present' && localStorage.getItem(petDeviceTokenKey(currentChild))) {
     treeLoaded = await refreshTreeStatus_(currentChild, { reason: 'manual-refresh' });
@@ -6283,7 +6439,8 @@ async function submitOrder() {
   } else {
     showToast(`⚠️ 「${failed.map(f=>f.item.item_name).join('、')}」送出失敗，已保留在購物車`, 'warn');
   }
-  setTimeout(() => loadAll(), 2000);
+  invalidateChildSectionCache_(currentChild, ['menu', 'orders', 'bank']);
+  setTimeout(() => loadChildSection_('menu', currentChild, { reason: 'order-submit', force: true }), 2000);
   processingOrder = false;
   if (submitBtn) { submitBtn.disabled = false; submitBtn.style.opacity = '1'; }
 }
@@ -6307,11 +6464,15 @@ async function declareChore(choreId) {
   const url = `${API}?action=declareChore&choreId=${encodeURIComponent(choreId)}&childId=${childAtClick}`;
   try {
     const res = await fetch(url); const data = await res.json(); if (data.error) { delete localChoreStatus[choreId + '_' + childAtClick]; showToast('⚠️ ' + data.error, 'error'); }
-    await loadAll(); renderChores(allData[currentChild]); // API 回應後立刻刷新，不用再等 2.5 秒
+    invalidateChildSectionCache_(childAtClick, 'chores');
+    await loadChildSection_('chores', childAtClick, { reason: 'declare-chore-success', force: true });
+    if (currentChild === childAtClick && currentSubTab === 'chores') renderChores(allData[currentChild]);
   } catch(e) {
     delete localChoreStatus[choreId + '_' + childAtClick]; // 失敗就清掉樂觀更新的假象，畫面復原
     showToast('❌ 申報失敗，請重試', 'error');
-    await loadAll(); renderChores(allData[currentChild]);
+    invalidateChildSectionCache_(childAtClick, 'chores');
+    await loadChildSection_('chores', childAtClick, { reason: 'declare-chore-failed', force: true });
+    if (currentChild === childAtClick && currentSubTab === 'chores') renderChores(allData[currentChild]);
   }
 }
 
@@ -7591,7 +7752,9 @@ async function childCancelOrder(orderId, coins) {
   try {
     const res = await fetch(url); const data = await res.json(); if (data.error) { showToast('⚠️ ' + data.error, 'error'); cancellingOrders.delete(orderId); btns.forEach(b => { b.disabled = false; b.style.opacity = ''; b.style.pointerEvents = ''; }); return; }
     showToast(`✅ 已取消，退還 ${coins} 枚代幣！`, 'success'); cancellingOrders.delete(orderId);
-    await loadAll(); btns.forEach(b => { b.disabled = false; b.style.opacity = ''; b.style.pointerEvents = ''; });
+    invalidateChildSectionCache_(currentChild, ['orders', 'menu', 'bank']);
+    await loadChildSection_('orders', currentChild, { reason: 'child-cancel-order', force: true });
+    btns.forEach(b => { b.disabled = false; b.style.opacity = ''; b.style.pointerEvents = ''; });
   } catch(e) {
     showToast('❌ 取消失敗，請重試', 'error');
     cancellingOrders.delete(orderId); // 失敗的話允許使用者重試
@@ -8920,7 +9083,7 @@ document.getElementById('wcd-bunny').innerHTML    = bunnyIMG(92);
 document.getElementById('wcd-bear').innerHTML     = bearChefIMG(88);
 document.getElementById('wcd-hamster').innerHTML  = hamsterIMG(88);
 document.getElementById('bank-tab-icon').src = IMG_HEDGEHOG;
-loadAll('page-load');
+void loadChildSection_('menu', currentChild, { reason: 'page-load' });
 
 // 顯示歡迎頁
 (function() {
@@ -8942,7 +9105,9 @@ setInterval(async () => {
       const outcome = await refreshPetStatusOnly_(childId, { reason: 'background-refresh' });
       if (outcome.ok && currentChild === childId && currentSubTab === 'forestpet') onEnterForestPet_();
     } else {
-      await loadAll();
+      await loadChildSection_(currentSubTab, currentChild, {
+        reason: 'background-refresh', force: true, silent: true
+      });
     }
   }
   updateBackgroundAudio(); // 不限定頁面，讓背景音軌不因切換孩子/子分頁/媽媽後台而停止
