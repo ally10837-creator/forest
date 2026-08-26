@@ -1767,8 +1767,8 @@ body.audio-settings-open { overflow: hidden; }
     </div>
     <div id="pet-setup-step-status" style="display:none;">
       <div class="confirm-msg" id="pet-setup-status-msg">裝置已連結，正在確認寵物狀態……</div>
-      <div class="confirm-btns" style="margin-top:10px;">
-        <button class="confirm-cancel" onclick="closePetSetup()">稍後再說</button>
+      <div class="confirm-btns" id="pet-setup-status-actions" style="margin-top:10px;display:none;">
+        <button class="confirm-cancel" id="pet-setup-status-dismiss-btn" onclick="closePetSetup()" style="display:none;">先進入小屋</button>
         <button class="confirm-ok" id="pet-setup-status-retry-btn" onclick="retryPetStatusAfterLink_()" disabled style="display:none;">重新確認</button>
       </div>
     </div>
@@ -2502,26 +2502,62 @@ function openPetSetup(requestedMode) {
 }
 
 function closePetSetup() {
+  clearPetSetupStatusActionDelay_();
   document.getElementById('pet-setup-overlay').classList.remove('show');
   _petSetupSession = null;
 }
 
-function showPetSetupStatus_(message, retryVisible = false) {
+let _petSetupStatusActionTimer_ = null;
+let _petSetupStatusAttemptSeq_ = 0;
+const PET_SETUP_DISMISS_DELAY_MS = 6000;
+
+function clearPetSetupStatusActionDelay_(attemptId = null) {
+  if (!_petSetupStatusActionTimer_) return;
+  if (attemptId !== null && _petSetupStatusActionTimer_.attemptId !== attemptId) return;
+  clearTimeout(_petSetupStatusActionTimer_.timerId);
+  _petSetupStatusActionTimer_ = null;
+}
+
+function setPetSetupStatusActions_(retryVisible, dismissVisible) {
+  const actions = document.getElementById('pet-setup-status-actions');
+  const dismissBtn = document.getElementById('pet-setup-status-dismiss-btn');
+  const retryBtn = document.getElementById('pet-setup-status-retry-btn');
+  dismissBtn.style.display = dismissVisible ? '' : 'none';
+  retryBtn.style.display = retryVisible ? '' : 'none';
+  retryBtn.disabled = !retryVisible;
+  actions.style.display = retryVisible || dismissVisible ? '' : 'none';
+}
+
+function showPetSetupStatus_(message, retryVisible = false, dismissVisible = false) {
   document.getElementById('pet-setup-step-pin').style.display = 'none';
   document.getElementById('pet-setup-step-name').style.display = 'none';
   document.getElementById('pet-setup-step-status').style.display = '';
   document.getElementById('pet-setup-status-msg').textContent = message;
-  const retryBtn = document.getElementById('pet-setup-status-retry-btn');
-  retryBtn.style.display = retryVisible ? '' : 'none';
-  retryBtn.disabled = !retryVisible;
+  setPetSetupStatusActions_(retryVisible, dismissVisible);
+}
+
+function schedulePetSetupStatusDismiss_(session, attemptId) {
+  clearPetSetupStatusActionDelay_();
+  const timerId = setTimeout(function () {
+    if (!_petSetupStatusActionTimer_ || _petSetupStatusActionTimer_.attemptId !== attemptId ||
+        !isPetSetupSessionCurrent_(session)) return;
+    _petSetupStatusActionTimer_ = null;
+    // 正常回應的前 6 秒完全不顯示任何按鈕；等待較久時才讓孩子先進入小屋。
+    // 「重新確認」仍只在真正失敗後出現。
+    setPetSetupStatusActions_(false, true);
+  }, PET_SETUP_DISMISS_DELAY_MS);
+  _petSetupStatusActionTimer_ = { attemptId, timerId };
 }
 
 async function handleDeviceLinked_(session) {
-  showPetSetupStatus_('裝置已連結，正在確認寵物狀態……');
+  const attemptId = ++_petSetupStatusAttemptSeq_;
+  showPetSetupStatus_('裝置已連結，正在確認寵物狀態……', false, false);
+  schedulePetSetupStatusDismiss_(session, attemptId);
   const outcome = await refreshPetStatusOnly_(session.childId, {
     reason: 'pairing-complete',
     cancelPrevious: true
   });
+  clearPetSetupStatusActionDelay_(attemptId);
   if (!isPetSetupSessionCurrent_(session)) return;
   if (outcome.error === 'stale' || outcome.error === 'aborted') return;
   const classified = outcome.ok ? classifyServerPet_(allData[session.childId]) : { kind: 'unknown' };
@@ -2548,7 +2584,7 @@ async function handleDeviceLinked_(session) {
       : outcome.error === 'timeout'
         ? '網路回應較慢，請稍後重新確認。'
         : '網路暫時中斷，請稍後重新確認。';
-  showPetSetupStatus_(message, true);
+  showPetSetupStatus_(message, true, true);
 }
 
 async function retryPetStatusAfterLink_() {
