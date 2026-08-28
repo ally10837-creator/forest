@@ -1772,23 +1772,14 @@ body.audio-settings-open { overflow: hidden; }
 
 <div class="confirm-overlay" id="pet-setup-overlay">
   <div class="confirm-box" style="max-width:300px;">
-    <div id="pet-setup-step-pin">
-      <div class="confirm-msg" id="pet-setup-pin-title">請媽媽輸入 PIN<br>連結這台裝置</div>
-      <input type="password" class="pin-input" id="pet-setup-pin-input" maxlength="6" placeholder="••••••" inputmode="numeric" style="margin-bottom:10px;">
-      <div class="pin-err" id="pet-setup-pin-err"></div>
-      <div class="confirm-btns" style="margin-top:10px;">
-        <button class="confirm-cancel" onclick="closePetSetup()">取消</button>
-        <button class="confirm-ok" id="pet-setup-pin-submit-btn" onclick="submitPetSetupPin()">下一步</button>
-      </div>
-    </div>
     <div id="pet-setup-step-status" style="display:none;">
-      <div class="confirm-msg" id="pet-setup-status-msg">裝置已連結，正在確認寵物狀態……</div>
-      <div class="confirm-btns" id="pet-setup-status-actions" style="margin-top:10px;display:none;">
-        <button class="confirm-cancel" id="pet-setup-status-dismiss-btn" onclick="closePetSetup()" style="display:none;">先進入小屋</button>
-        <button class="confirm-ok" id="pet-setup-status-retry-btn" onclick="retryPetStatusAfterLink_()" disabled style="display:none;">重新確認</button>
+      <div class="confirm-msg" id="pet-setup-status-msg">正在確認領養結果……</div>
+      <div class="confirm-btns" style="margin-top:10px;">
+        <button class="confirm-cancel" onclick="closePetSetup()">稍後再試</button>
+        <button class="confirm-ok" onclick="retryPetSetupStatus_()">重新確認</button>
       </div>
     </div>
-    <div id="pet-setup-step-name" style="display:none;">
+    <div id="pet-setup-step-name">
       <div class="confirm-msg">幫你的新朋友取個名字吧！</div>
       <!-- maxlength 故意設 24，不是真正的 12 字上限：HTML maxlength 是按 UTF-16 code
            unit 算，emoji 等字元一個字就佔 2 個 code unit，12 個 code point 最壞情況要
@@ -2333,70 +2324,6 @@ function petPhase2ADoneKey(childId) { return 'forest_pet_phase2a_done_' + childI
 
 // 本機模擬寵物狀態、經驗與食物已移除；後端資料是唯一真相。
 
-// 裝置 token 與孩子綁定；只控制受保護操作，不參與「是否已有寵物」的 render 決策。
-function petDeviceTokenKey(childId) { return 'forest_device_token_' + childId; }
-function petDeviceLinkPendingKey_(childId) { return 'forest_device_link_pending_' + childId; }
-
-function isProposedDeviceSecretClient_(value) {
-  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
-}
-
-function generateSecureHex256_() {
-  if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') {
-    throw new Error('secure_random_unavailable');
-  }
-  const bytes = new Uint8Array(32);
-  window.crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function generateSecureSixDigitCode_() {
-  if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') {
-    throw new Error('secure_random_unavailable');
-  }
-  const limit = Math.floor(0x100000000 / 1000000) * 1000000;
-  const value = new Uint32Array(1);
-  do { window.crypto.getRandomValues(value); } while (value[0] >= limit);
-  return String(value[0] % 1000000).padStart(6, '0');
-}
-
-function petDeviceLabel_() {
-  const ua = navigator.userAgent || '';
-  if (/iPad/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'iPad Safari';
-  if (/iPhone/i.test(ua)) return 'iPhone Safari';
-  if (/Android/i.test(ua)) return 'Android 裝置';
-  return '森林餐館裝置';
-}
-
-function getPendingDeviceLink_(childId) {
-  try {
-    const value = JSON.parse(localStorage.getItem(petDeviceLinkPendingKey_(childId)) || 'null');
-    if (!value || !isProposedDeviceSecretClient_(value.proposedDeviceToken) ||
-        !Number.isFinite(value.createdAt)) return null;
-    if (Date.now() - value.createdAt > 24 * 60 * 60 * 1000) {
-      localStorage.removeItem(petDeviceLinkPendingKey_(childId));
-      return null;
-    }
-    return value;
-  } catch (e) { return null; }
-}
-
-function savePendingDeviceLink_(childId, proposedDeviceToken) {
-  const pending = { proposedDeviceToken, createdAt: Date.now() };
-  localStorage.setItem(petDeviceLinkPendingKey_(childId), JSON.stringify(pending));
-  return pending;
-}
-
-function clearPendingDeviceLink_(childId) {
-  localStorage.removeItem(petDeviceLinkPendingKey_(childId));
-}
-
-function promotePendingDeviceLink_(childId, pending) {
-  localStorage.setItem(petDeviceTokenKey(childId), pending.proposedDeviceToken);
-  clearPendingDeviceLink_(childId);
-  invalidatePetEconomyCache_(childId);
-}
-
 // 冪等性：pending 交易要把 clientRequestId 「跟送出當下的 petName」綁在一起持久化，
 // 不能只存 ID。後端 initializePet 是拿 (childId, clientRequestId, tx_type) 找既有交易，
 // 再核對 payload_snapshot（含 petName）是否跟這次請求一致——如果同一個 ID 第二次帶了
@@ -2429,7 +2356,7 @@ function getOrCreatePetSetupPending(childId, petName) {
 
 // 只能在「成功」或「確認這筆交易從未在後端建立過（getTransactionStatus 回
 // not_found，且緊接著用同一份原始 payload 重送已經有明確終態）」之後呼叫。
-// conflict／error_unsynced／invalid_token 都不可以呼叫這個。already_has_pet／failed 只有在
+// conflict／error_unsynced 都不可以呼叫這個。already_has_pet／failed 只有在
 // 隨後的權威 loadAll 明確回 present 時，才由 recovery 流程清除已終止的本機 pending。
 function clearPetSetupPending(childId) {
   localStorage.removeItem(petSetupPendingKey(childId));
@@ -2474,7 +2401,7 @@ function isPhase2ATransportError_(res) {
   return !!res && (res.error === 'timeout' || res.error === 'network_error');
 }
 
-// 寵物寫入動作如果發生網路逾時，不能立刻盲目重送整個狀態機。先用相同 token、
+// 寵物寫入動作如果發生網路逾時，不能立刻盲目重送整個狀態機。先用相同 childId、
 // clientRequestId、action 與 targetId 查詢已建立的交易；只有後端明確回 processing，
 // 才以相同冪等鍵續跑一次。not_found 代表無法證明原請求是否到達，不自動建立新交易。
 async function callPetMutationWithRecovery_(action, payload, targetId) {
@@ -2484,7 +2411,6 @@ async function callPetMutationWithRecovery_(action, payload, targetId) {
 
   const status = await callPhase2A('getPetMutationStatus', {
     childId: payload.childId,
-    deviceToken: payload.deviceToken,
     clientRequestId: payload.clientRequestId,
     mutationAction: action,
     targetId,
@@ -2504,7 +2430,6 @@ async function callPetMutationWithRecovery_(action, payload, targetId) {
     // 已證明原交易存在，才允許用完全相同的 payload／clientRequestId 續跑一次。
     return await callPhase2A(action, payload, { timeoutMs: PHASE2A_TIMEOUT_MS });
   }
-  if (status && status.error === 'invalid_token') return status;
   if (status && (status.error === 'conflict' || status.error === 'error_unsynced')) return status;
   return { ok: false, error: 'network_error', status_check: status && status.error ? status.error : 'unavailable' };
 }
@@ -2514,38 +2439,21 @@ function isValidCanonicalPetNameClient_(name) {
   return typeof name === 'string' && name.length > 0 && name === name.trim() && Array.from(name).length <= 12;
 }
 
-// 統一把後端各種錯誤碼／reason 轉成孩子/媽媽看得懂的中文，4 個新 API 呼叫共用一份對照。
-// credential_conflict 有時候在 error 頂層（createPairingCode）、有時候包在 invalid_token
-// 的 reason 裡（exchangePairingCode），照後端實際合約兩種都要接住。
+// 統一把領養 API 錯誤碼轉成孩子看得懂的中文。
 function describePhase2AError_(res) {
-  if (res.error === 'invalid_pin') {
-    return 'PIN 錯誤，請再試一次' + (res.attempts_remaining != null ? '（還剩 ' + res.attempts_remaining + ' 次）' : '');
-  }
-  if (res.error === 'credential_conflict' || res.reason === 'credential_conflict') {
-    return '配對資料異常，請聯絡管理員處理';
-  }
-  if (res.reason === 'locked') {
-    const until = res.locked_until ? new Date(res.locked_until) : null;
-    return until ? ('已鎖定，請 ' + until.toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit'}) + ' 之後再試') : '已鎖定，請稍後再試';
-  }
-  if (res.reason === 'expired') return '配對已過期，請重新開始';
-  if (res.reason === 'not_found' || res.reason === 'mismatch') return '配對資料不正確，請重新開始';
   if (res.error === 'already_has_pet') return '後端已有寵物，正在重新同步寵物資料';
   if (res.error === 'missing_pet_name') return '請輸入寵物的名字';
   if (res.error === 'unknown_child_id') return '找不到這個孩子的資料，請聯絡管理員';
-  if (res.error === 'not_configured') return '尚未設定媽媽 PIN，請聯絡管理員';
-  if (res.error === 'device_limit_reached') return '這位孩子已連結 5 台裝置，請媽媽先撤銷一台舊裝置';
-  if (res.error === 'device_token_required') return '請指定要撤銷的裝置';
   return '設定失敗，請聯絡管理員';
 }
 
 // Legacy setup flow removed after Phase 3 authority migration.
 
-async function attemptInitializePet_(childId, deviceToken, pending) {
+async function attemptInitializePet_(childId, pending) {
   const res = await callPhase2A('initializePet', {
-    childId, deviceToken, clientRequestId: pending.clientRequestId, petName: pending.petName
+    childId, clientRequestId: pending.clientRequestId, petName: pending.petName
   });
-  if (isPhase2ATransportError_(res)) return await queryPetSetupStatus_(childId, deviceToken, pending);
+  if (isPhase2ATransportError_(res)) return await queryPetSetupStatus_(childId, pending);
   return normalizeInitializePetResult_(res);
 }
 
@@ -2558,7 +2466,7 @@ function declinePet() {
 // Legacy localStorage-only render removed.
 
 // ══════════════════════════════════════════════
-// PHASE 3：後端寵物權威狀態、裝置連結與驚喜樹
+// PHASE 3：後端寵物權威狀態與驚喜樹
 // 所有 render 決策只讀 pet_status + pet，localStorage 不再決定「有沒有寵物」。
 // ══════════════════════════════════════════════
 function normalizeServerPet_(pet) {
@@ -2629,7 +2537,6 @@ function cancelPetStatusRequest_(childId) {
 }
 
 function petStatusFailureMessage_(error, hasCachedPet) {
-  if (error === 'invalid_token') return '裝置授權已失效，請媽媽重新連結這台裝置。';
   if (error === 'invalid_data') return '寵物資料不一致，需要媽媽處理。';
   if (error === 'timeout') {
     return hasCachedPet ? '網路回應較慢，先顯示上次的寵物資料。' : '網路回應較慢，請稍後重新確認。';
@@ -2712,300 +2619,54 @@ function isPetSetupSessionCurrent_(session) {
     session.childId === _petSetupSession.childId && currentChild === session.childId;
 }
 
-function openPetSetup(requestedMode) {
+function openPetSetup() {
   const classified = classifyServerPet_(allData[currentChild]);
-  const mode = requestedMode || (classified.kind === 'present' ? 'link_existing_pet' : 'pair_then_adopt');
-  if ((mode === 'link_existing_pet' && classified.kind !== 'present') ||
-      (mode === 'pair_then_adopt' && classified.kind !== 'absent')) {
+  if (classified.kind !== 'absent') {
     showToast('⚠️ 請先重新載入寵物狀態', 'warn');
     return;
   }
-  if (mode === 'pair_then_adopt' && (getPetSetupPending(currentChild) || getPetSetupGuard_(currentChild))) {
+  if (getPetSetupGuard_(currentChild)) {
     showToast('⚠️ 上次領養仍待確認，請聯絡管理員核對', 'error');
     return;
   }
   _petSetupSession = {
     sessionId: 'pet-modal-' + Date.now() + '-' + Math.random().toString(36).slice(2),
     childId: currentChild,
-    mode
+    mode: 'adopt'
   };
-  document.getElementById('pet-setup-pin-title').innerHTML = mode === 'link_existing_pet'
-    ? '請媽媽輸入 PIN<br>連結這台裝置'
-    : '請媽媽輸入 PIN<br>配對後領養寵物';
-  document.getElementById('pet-setup-step-pin').style.display = '';
-  document.getElementById('pet-setup-step-name').style.display = 'none';
   document.getElementById('pet-setup-step-status').style.display = 'none';
-  document.getElementById('pet-setup-pin-input').value = '';
-  document.getElementById('pet-setup-pin-err').textContent = '';
+  document.getElementById('pet-setup-step-name').style.display = '';
+  const existingPending = getPetSetupPending(currentChild);
+  document.getElementById('pet-setup-name-input').value = existingPending ? existingPending.petName : '';
+  document.getElementById('pet-setup-name-err').textContent = '';
   document.getElementById('pet-setup-overlay').classList.add('show');
-  const pendingLink = getPendingDeviceLink_(currentChild);
-  if (pendingLink && !localStorage.getItem(petDeviceTokenKey(currentChild))) {
-    _petSetupSession.pendingDeviceLink = pendingLink;
-    showPetSetupStatus_('正在確認上次的裝置連結……', false, true);
-    void recoverPendingDeviceLink_(_petSetupSession, pendingLink);
-  }
 }
 
 function closePetSetup() {
-  clearPetSetupStatusActionDelay_();
   document.getElementById('pet-setup-overlay').classList.remove('show');
   _petSetupSession = null;
 }
 
-let _petSetupStatusActionTimer_ = null;
-let _petSetupStatusAttemptSeq_ = 0;
-const PET_SETUP_DISMISS_DELAY_MS = 6000;
-
-function clearPetSetupStatusActionDelay_(attemptId = null) {
-  if (!_petSetupStatusActionTimer_) return;
-  if (attemptId !== null && _petSetupStatusActionTimer_.attemptId !== attemptId) return;
-  clearTimeout(_petSetupStatusActionTimer_.timerId);
-  _petSetupStatusActionTimer_ = null;
-}
-
-function setPetSetupStatusActions_(retryVisible, dismissVisible) {
-  const actions = document.getElementById('pet-setup-status-actions');
-  const dismissBtn = document.getElementById('pet-setup-status-dismiss-btn');
-  const retryBtn = document.getElementById('pet-setup-status-retry-btn');
-  dismissBtn.style.display = dismissVisible ? '' : 'none';
-  retryBtn.style.display = retryVisible ? '' : 'none';
-  retryBtn.disabled = !retryVisible;
-  actions.style.display = retryVisible || dismissVisible ? '' : 'none';
-}
-
-function showPetSetupStatus_(message, retryVisible = false, dismissVisible = false) {
-  document.getElementById('pet-setup-step-pin').style.display = 'none';
+function showPetSetupStatus_(message) {
   document.getElementById('pet-setup-step-name').style.display = 'none';
   document.getElementById('pet-setup-step-status').style.display = '';
   document.getElementById('pet-setup-status-msg').textContent = message;
-  setPetSetupStatusActions_(retryVisible, dismissVisible);
 }
 
-function schedulePetSetupStatusDismiss_(session, attemptId) {
-  clearPetSetupStatusActionDelay_();
-  const timerId = setTimeout(function () {
-    if (!_petSetupStatusActionTimer_ || _petSetupStatusActionTimer_.attemptId !== attemptId ||
-        !isPetSetupSessionCurrent_(session)) return;
-    _petSetupStatusActionTimer_ = null;
-    // 正常回應的前 6 秒完全不顯示任何按鈕；等待較久時才讓孩子先進入小屋。
-    // 「重新確認」仍只在真正失敗後出現。
-    setPetSetupStatusActions_(false, true);
-  }, PET_SETUP_DISMISS_DELAY_MS);
-  _petSetupStatusActionTimer_ = { attemptId, timerId };
-}
-
-async function handleDeviceLinked_(session) {
-  const attemptId = ++_petSetupStatusAttemptSeq_;
-  showPetSetupStatus_('裝置已連結，正在確認寵物狀態……', false, false);
-  schedulePetSetupStatusDismiss_(session, attemptId);
-  const outcome = await refreshPetStatusOnly_(session.childId, {
-    reason: 'pairing-complete',
-    cancelPrevious: true
-  });
-  clearPetSetupStatusActionDelay_(attemptId);
-  if (!isPetSetupSessionCurrent_(session)) return;
-  if (outcome.error === 'stale' || outcome.error === 'aborted') return;
-  const classified = outcome.ok ? classifyServerPet_(allData[session.childId]) : { kind: 'unknown' };
-  if (classified.kind === 'present') {
-    closePetSetup();
-    showToast('✅ 這台裝置已連結，歡迎回來！', 'success');
-    await refreshTreeStatus_(session.childId, { reason: 'pairing-complete' });
-    return;
-  }
-  if (classified.kind === 'absent' && session.mode === 'pair_then_adopt') {
-    document.getElementById('pet-setup-step-status').style.display = 'none';
-    document.getElementById('pet-setup-step-name').style.display = '';
-    const existingPending = getPetSetupPending(session.childId);
-    document.getElementById('pet-setup-name-input').value = existingPending ? existingPending.petName : '';
-    document.getElementById('pet-setup-name-err').textContent = '';
-    return;
-  }
-  const message = outcome.ok && classified.kind === 'absent'
-    ? '寵物狀態與裝置連結資料不一致，需要媽媽處理。'
-    : outcome.error === 'invalid_token'
-    ? '裝置授權已失效，請媽媽重新連結這台裝置。'
-    : outcome.error === 'invalid_data'
-      ? '寵物資料不一致，需要媽媽處理。'
-      : outcome.error === 'timeout'
-        ? '網路回應較慢，請稍後重新確認。'
-        : '網路暫時中斷，請稍後重新確認。';
-  showPetSetupStatus_(message, true, true);
-}
-
-function returnPetSetupToPin_(session, message) {
+async function retryPetSetupStatus_() {
+  const session = _petSetupSession;
   if (!isPetSetupSessionCurrent_(session)) return;
   document.getElementById('pet-setup-step-status').style.display = 'none';
-  document.getElementById('pet-setup-step-name').style.display = 'none';
-  document.getElementById('pet-setup-step-pin').style.display = '';
-  document.getElementById('pet-setup-pin-input').value = '';
-  document.getElementById('pet-setup-pin-err').textContent = message || '';
-  session.pendingDeviceLink = null;
+  document.getElementById('pet-setup-step-name').style.display = '';
+  await submitPetSetupName();
 }
 
-const PET_LINK_STATUS_TIMEOUT_MS = 12000;
-const PET_LINK_RECOVERY_ATTEMPTS = 3;
-
-async function recoverPendingDeviceLink_(session, pending) {
-  if (!isPetSetupSessionCurrent_(session) || !pending) return;
-  session.pendingDeviceLink = pending;
-  showPetSetupStatus_('連結回應較慢，正在安全確認結果……', false, true);
-  let sawNotFound = false;
-  let sawTransportError = false;
-
-  for (let attempt = 0; attempt < PET_LINK_RECOVERY_ATTEMPTS; attempt++) {
-    if (!isPetSetupSessionCurrent_(session)) return;
-    const status = await callPhase2A('verifyDeviceLink', {
-      childId: session.childId,
-      proposedDeviceToken: pending.proposedDeviceToken
-    }, { timeoutMs: PET_LINK_STATUS_TIMEOUT_MS });
-    if (!isPetSetupSessionCurrent_(session)) return;
-
-    if (status && status.ok === true && status.linked === true) {
-      promotePendingDeviceLink_(session.childId, pending);
-      session.pendingDeviceLink = null;
-      await handleDeviceLinked_(session);
-      return;
-    }
-    if (status && status.ok === true && status.linked === false && status.status === 'not_found') {
-      sawNotFound = true;
-    } else if (isPhase2ATransportError_(status)) {
-      sawTransportError = true;
-    } else {
-      showPetSetupStatus_(describePhase2AError_(status || { error: 'internal_error' }), true, true);
-      return;
-    }
-    if (attempt + 1 < PET_LINK_RECOVERY_ATTEMPTS) {
-      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-    }
-  }
-
-  if (sawNotFound && !sawTransportError) {
-    // 三次都由後端明確確認不存在，才允許放棄這支候選並重新輸入 PIN；不會在第一次逾時
-    // 立刻建立新配對，也不會自動重送 exchangePairingCode。
-    clearPendingDeviceLink_(session.childId);
-    returnPetSetupToPin_(session, '上次連結未完成，請再輸入一次 PIN');
-    return;
-  }
-  showPetSetupStatus_('網路回應仍較慢，候選連結已保留；請稍後按「重新確認」。', true, true);
-}
-
-async function retryPetStatusAfterLink_() {
-  const session = _petSetupSession;
-  if (!session) return;
-  const btn = document.getElementById('pet-setup-status-retry-btn');
-  if (btn.disabled) return;
-  btn.disabled = true;
-  try {
-    const pending = session.pendingDeviceLink || getPendingDeviceLink_(session.childId);
-    if (pending && !localStorage.getItem(petDeviceTokenKey(session.childId))) {
-      await recoverPendingDeviceLink_(session, pending);
-      return;
-    }
-    cancelPetStatusRequest_(session.childId);
-    await handleDeviceLinked_(session);
-  }
-  finally { btn.disabled = false; }
-}
-
-async function submitPetSetupPin() {
-  const submitBtn = document.getElementById('pet-setup-pin-submit-btn');
-  if (submitBtn.disabled || !_petSetupSession) return;
-  const session = _petSetupSession;
-  submitBtn.disabled = true;
-  try {
-    const pin = document.getElementById('pet-setup-pin-input').value;
-    const errEl = document.getElementById('pet-setup-pin-err');
-    const inputEl = document.getElementById('pet-setup-pin-input');
-    errEl.textContent = '';
-    let proposedAdminToken;
-    let proposedPairingCode;
-    let proposedDeviceToken;
-    try {
-      proposedAdminToken = generateSecureHex256_();
-      proposedPairingCode = generateSecureSixDigitCode_();
-      proposedDeviceToken = generateSecureHex256_();
-    } catch (e) {
-      errEl.textContent = '此瀏覽器無法安全產生裝置憑證，請更新瀏覽器後再試';
-      return;
-    }
-
-    const adminRes = await callPhase2A('issueAdminToken', { pin, proposedAdminToken });
-    if (!isPetSetupSessionCurrent_(session)) return;
-    let adminToken = proposedAdminToken;
-    if (adminRes.ok) {
-      if (adminRes.admin_token !== proposedAdminToken) {
-        errEl.textContent = '連結服務版本不一致，請稍後再試';
-        return;
-      }
-    } else if (!isPhase2ATransportError_(adminRes)) {
-      errEl.textContent = describePhase2AError_(adminRes); inputEl.classList.add('shake'); inputEl.value = '';
-      setTimeout(() => inputEl.classList.remove('shake'), 500); return;
-    }
-
-    // issueAdminToken 的回應即使逾時，後端仍可能已完成；下一步以同一個候選 admin token
-    // 驗證，不重新要求 PIN，也不產生第二支 admin token。
-    const pairRes = await callPhase2A('createPairingCode', {
-      adminToken,
-      childId: session.childId,
-      proposedPairingCode
-    });
-    if (!isPetSetupSessionCurrent_(session)) return;
-    let pairingCode = proposedPairingCode;
-    if (pairRes.ok) {
-      if (pairRes.pairing_code !== proposedPairingCode) {
-        errEl.textContent = '連結服務版本不一致，請稍後再試';
-        return;
-      }
-    } else if (!isPhase2ATransportError_(pairRes)) {
-      errEl.textContent = describePhase2AError_(pairRes);
-      return;
-    }
-
-    // 必須在 exchangePairingCode 送出前持久化；HTTP 回應遺失時才能拿同一支候選 token
-    // 查驗，而不是重新輸入 PIN、建立另一筆配對與另一支裝置 token。
-    const pendingLink = savePendingDeviceLink_(session.childId, proposedDeviceToken);
-    session.pendingDeviceLink = pendingLink;
-    const exchRes = await callPhase2A('exchangePairingCode', {
-      childId: session.childId,
-      pairingCode,
-      deviceLabel: petDeviceLabel_(),
-      proposedDeviceToken
-    });
-    if (!isPetSetupSessionCurrent_(session)) return;
-    if (!exchRes.ok) {
-      if (isPhase2ATransportError_(exchRes)) {
-        await recoverPendingDeviceLink_(session, pendingLink);
-        return;
-      }
-      clearPendingDeviceLink_(session.childId);
-      session.pendingDeviceLink = null;
-      errEl.textContent = describePhase2AError_(exchRes);
-      return;
-    }
-    if (exchRes.device_token !== proposedDeviceToken) {
-      clearPendingDeviceLink_(session.childId);
-      session.pendingDeviceLink = null;
-      errEl.textContent = '連結服務版本不一致，請稍後再試';
-      return;
-    }
-    promotePendingDeviceLink_(session.childId, pendingLink);
-    session.pendingDeviceLink = null;
-    await handleDeviceLinked_(session);
-  } finally { submitBtn.disabled = false; }
-}
-
-async function queryPetSetupStatus_(childId, deviceToken, pending) {
-  const statusRes = await callPhase2A('getTransactionStatus', { deviceToken, clientRequestId: pending.clientRequestId });
+async function queryPetSetupStatus_(childId, pending) {
+  const statusRes = await callPhase2A('getTransactionStatus', { childId, clientRequestId: pending.clientRequestId });
   if (isPhase2ATransportError_(statusRes)) return { kind: 'network_error' };
   if (!statusRes.ok) {
     if (statusRes.error === 'not_found') return { kind: 'not_found' };
     if (statusRes.error === 'error_unsynced') return { kind: 'error_unsynced' };
-    if (statusRes.error === 'invalid_token') {
-      if (statusRes.reason === 'credential_conflict') return { kind: 'credential_conflict' };
-      localStorage.removeItem(petDeviceTokenKey(childId));
-      invalidatePetEconomyCache_(childId);
-      return { kind: 'invalid_token' };
-    }
     return { kind: 'blocked', message: describePhase2AError_(statusRes) };
   }
   if (statusRes.status === 'success' && normalizeServerPet_(statusRes.result)) return { kind: 'success', result: statusRes.result };
@@ -3019,7 +2680,6 @@ function normalizeInitializePetResult_(res) {
   if (res.ok && normalizeServerPet_(res.result)) return { kind: 'success', result: res.result };
   if (res.error === 'already_has_pet') return { kind: 'recover_existing' };
   if (res.error === 'error_unsynced') return { kind: 'error_unsynced' };
-  if (res.error === 'invalid_token') return { kind: res.reason === 'credential_conflict' ? 'credential_conflict' : 'invalid_token' };
   return { kind: 'blocked', message: describePhase2AError_(res) };
 }
 
@@ -3049,7 +2709,7 @@ async function finishPetSetupSuccess_(childId, session) {
   if (session && !isPetSetupSessionCurrent_(session)) return false;
   const classified = outcome.ok ? classifyServerPet_(allData[childId]) : { kind: 'unknown' };
   if (classified.kind !== 'present') {
-    showPetSetupStatus_('領養請求已完成，但尚未能由後端重新確認。已保留原交易，請重新確認。', true);
+    showPetSetupStatus_('領養請求已完成，但尚未能由後端重新確認。已保留原交易，請重新確認。');
     return false;
   }
   clearPetSetupPending(childId);
@@ -3063,7 +2723,7 @@ async function finishPetSetupSuccess_(childId, session) {
 async function submitPetSetupName() {
   const submitBtn = document.getElementById('pet-setup-name-submit-btn');
   const session = _petSetupSession;
-  if (submitBtn.disabled || !session || session.mode !== 'pair_then_adopt' || !isPetSetupSessionCurrent_(session)) return;
+  if (submitBtn.disabled || !session || session.mode !== 'adopt' || !isPetSetupSessionCurrent_(session)) return;
   submitBtn.disabled = true;
   try {
     const childId = session.childId;
@@ -3073,18 +2733,16 @@ async function submitPetSetupName() {
     if (classifyServerPet_(allData[childId]).kind !== 'absent') {
       errEl.textContent = '寵物狀態已改變，請重新確認'; return;
     }
-    const deviceToken = localStorage.getItem(petDeviceTokenKey(childId));
-    if (!deviceToken) { errEl.textContent = '裝置尚未連結，請重新開始'; return; }
     let pending = getPetSetupPending(childId);
     let outcome;
     if (pending) {
-      outcome = await queryPetSetupStatus_(childId, deviceToken, pending);
-      if (outcome.kind === 'not_found') outcome = await attemptInitializePet_(childId, deviceToken, pending);
+      outcome = await queryPetSetupStatus_(childId, pending);
+      if (outcome.kind === 'not_found') outcome = await attemptInitializePet_(childId, pending);
     } else {
       const petName = nameInput.value.trim();
       if (!isValidCanonicalPetNameClient_(petName)) { errEl.textContent = '請輸入 1~12 個字的名字'; return; }
       pending = getOrCreatePetSetupPending(childId, petName);
-      outcome = await attemptInitializePet_(childId, deviceToken, pending);
+      outcome = await attemptInitializePet_(childId, pending);
     }
     if (!isPetSetupSessionCurrent_(session)) return;
     if (outcome.kind === 'success') { await finishPetSetupSuccess_(childId, session); return; }
@@ -3096,14 +2754,6 @@ async function submitPetSetupName() {
     if (outcome.kind === 'error_unsynced') {
       setPetSetupGuard_(childId, 'error_unsynced');
       errEl.textContent = '資料需要人工核對，請聯絡管理員處理'; return;
-    }
-    if (outcome.kind === 'invalid_token') {
-      localStorage.removeItem(petDeviceTokenKey(childId));
-      invalidatePetEconomyCache_(childId);
-      errEl.textContent = '裝置連結已失效；原領養請求已保留，請重新連結這台裝置'; return;
-    }
-    if (outcome.kind === 'credential_conflict') {
-      errEl.textContent = '裝置憑證資料需要人工核對；原領養請求與 token 均已保留'; return;
     }
     if (outcome.kind === 'processing') { showToast('⚠️ 還在處理中，請稍後再點一次「完成領養」', 'warn'); return; }
     if (outcome.kind === 'network_error' || outcome.kind === 'not_found') { showToast('⚠️ 網路錯誤，請稍後再試一次', 'error'); return; }
@@ -3221,15 +2871,6 @@ function createPetFoodPending_(childId, action, foodId) {
   return storePetFoodPending_(pending) ? pending : null;
 }
 
-function safePetDeviceToken_(childId) {
-  try { return localStorage.getItem(petDeviceTokenKey(childId)); } catch (e) { return null; }
-}
-
-function removePetDeviceTokenSafely_(childId) {
-  try { localStorage.removeItem(petDeviceTokenKey(childId)); } catch (e) {}
-  invalidatePetEconomyCache_(childId);
-}
-
 function renderCurrentPetFood_() {
   if (currentSubTab === 'forestpet' && document.getElementById('pet-food-grid')) renderPetFood();
 }
@@ -3291,9 +2932,7 @@ function normalizeFeedPetFoodResponse_(res, pending) {
 }
 
 async function sendPetFoodAttempt_(childId, pending) {
-  const token = safePetDeviceToken_(childId);
-  if (!token) return { ok: false, error: 'invalid_token', reason: 'missing' };
-  const payload = { childId, deviceToken: token, foodId: pending.foodId,
+  const payload = { childId, foodId: pending.foodId,
     clientRequestId: pending.clientRequestId, contractVersion: 'p2.1' };
   return callPetMutationWithRecovery_(pending.action, payload, pending.foodId);
 }
@@ -3391,10 +3030,6 @@ async function resumePendingPetFood_(childId) {
     state.status = 'blocked'; state.message = '有一筆照顧請求待確認，完成後才能處理食物。';
     renderCurrentPetFood_(); return;
   }
-  if (!safePetDeviceToken_(childId)) {
-    state.status = 'locked'; state.message = '裝置連結已失效；原食物請求已保留，重新連結後可繼續確認。';
-    renderCurrentPetFood_(); return;
-  }
   state.status = 'sending'; state.guarded = false; state.message = '正在請後端確認這筆交易，請不要重複點擊……';
   renderCurrentPetFood_();
   // 食物 pending 期間，配件商店的購買／穿戴按鈕也要立刻鎖住。舊整合版使用
@@ -3473,19 +3108,6 @@ async function resumePendingPetFood_(childId) {
       if (currentChild === childId) showToast(message, 'warn');
       return;
     }
-    if (error === 'invalid_token') {
-      if (res.reason === 'expired' || res.reason === 'revoked' || res.reason === 'not_found' || res.reason === 'missing') {
-        removePetDeviceTokenSafely_(childId);
-        state.status = 'locked'; state.guarded = false; state.message = '裝置連結已失效；原食物請求已保留，重新連結後可繼續確認。';
-      } else if (res.reason === 'credential_conflict' || res.reason === 'invalid_status') {
-        setPetFoodGuard_(childId, pending, 'invalid_token:' + res.reason);
-        state.status = 'blocked'; state.guarded = true; state.message = '裝置憑證資料需要人工核對；原食物請求已保留。';
-      } else {
-        setPetFoodGuard_(childId, pending, 'invalid_token:unknown_reason');
-        state.status = 'blocked'; state.guarded = true; state.message = '裝置驗證結果無法安全判定；原食物請求已保留。';
-      }
-      return;
-    }
     if (error === 'network_error' || error === 'timeout') {
       state.status = 'blocked'; state.guarded = false; state.message = '網路結果不確定，請用原請求繼續確認。'; return;
     }
@@ -3515,9 +3137,6 @@ async function startPetFoodAction_(action, foodId) {
   if (classifyServerPet_(allData[childId]).kind !== 'present') {
     showToast('請先重新載入，確認後端寵物狀態。', 'warn'); return;
   }
-  if (!safePetDeviceToken_(childId)) {
-    showToast('請先連結這台裝置。', 'warn'); return;
-  }
   if (!validatePetEconomyResult_(petShopLastResult_)) {
     showToast('正在確認後端庫存，請稍後再試。', 'warn'); return;
   }
@@ -3540,7 +3159,7 @@ async function startPetFoodAction_(action, foodId) {
     const confirmed = await showConfirm('確定購買「' + meta.name + '」嗎？\n後端將扣除 ' + meta.priceCoins + ' 枚代幣。');
     if (!confirmed || currentChild !== childId) return;
     if (classifyServerPet_(allData[childId]).kind !== 'present' || getTreeOpenPending_(childId) || hasPetCareProtection_(childId) ||
-        hasPetFoodProtection_(childId) || hasPetAccessoryProtection_(childId) || !safePetDeviceToken_(childId)) {
+        hasPetFoodProtection_(childId) || hasPetAccessoryProtection_(childId)) {
       showToast('狀態已改變，請重新確認。', 'warn'); return;
     }
   }
@@ -3585,33 +3204,20 @@ function renderCurrentForestPet_() {
   if (currentSubTab === 'forestpet' && allData[currentChild]) renderForestPet(allData[currentChild]);
 }
 
-function handleTreeAuthError_(childId, res, state) {
-  if (res.reason === 'credential_conflict') {
-    state.status = 'blocked'; state.message = '裝置憑證資料需要人工核對，請聯絡管理員。';
-  } else {
-    localStorage.removeItem(petDeviceTokenKey(childId));
-    invalidatePetEconomyCache_(childId);
-    state.status = 'locked'; state.message = '裝置連結已失效，請重新連結這台裝置。';
-  }
-}
-
 async function refreshTreeStatus_(childId, options = {}) {
   const state = getTreeState_(childId);
   if (state.inFlight) return state.inFlight;
   if (classifyServerPet_(allData[childId]).kind !== 'present') return false;
-  const token = localStorage.getItem(petDeviceTokenKey(childId));
-  if (!token) { state.status = 'locked'; state.message = ''; renderCurrentForestPet_(); return false; }
   const seq = ++state.requestSeq;
   state.status = 'loading'; state.message = ''; renderCurrentForestPet_();
   state.inFlight = (async () => {
-    const res = await callPhase2A('getTreeStatus', { childId, deviceToken: token });
+    const res = await callPhase2A('getTreeStatus', { childId });
     if (seq !== state.requestSeq) return false;
     if (res.ok) {
       const normalized = normalizeTreeStatusResponse_(res);
       if (!normalized.ok) { state.status = 'blocked'; state.message = '樹的資料格式無法確認，請聯絡管理員。'; }
       else { state.status = 'ready'; state.pendingFruits = normalized.fruits; state.unsupported = normalized.unsupported; state.message = ''; }
-    } else if (res.error === 'invalid_token') handleTreeAuthError_(childId, res, state);
-    else if (res.error === 'transaction_blocked') {
+    } else if (res.error === 'transaction_blocked') {
       state.status = 'blocked';
       state.message = getTreeOpenPending_(childId)
         ? '有一筆果實交易待確認，請用原請求繼續。'
@@ -3631,12 +3237,9 @@ async function refreshTreeStatus_(childId, options = {}) {
 
 function onEnterForestPet_() {
   const childId = currentChild;
-  if (classifyServerPet_(allData[childId]).kind === 'present' && localStorage.getItem(petDeviceTokenKey(childId))) {
+  if (classifyServerPet_(allData[childId]).kind === 'present') {
     void refreshTreeStatus_(childId, { reason: 'enter-forest-pet' });
   }
-  // P1-1 修正：不能用「有 token」當作是否刷新配件狀態的前置條件——沒有 token
-  // 這件事本身要交給 refreshPetAccessoryEquipState_ 自己處理並歸零，不然沒
-  // token 的孩子會直接跳過整段，畫面繼續沿用切換孩子前殘留的舊 petAccessoryEquippedId_。
   void refreshPetAccessoryEquipState_(childId);
 }
 
@@ -3647,8 +3250,8 @@ function onEnterForestPet_() {
 // 共用同一把「交易忙碌鎖」——任一筆購買或穿戴請求還在飛行中，商店裡所有購買／
 // 穿戴按鈕全部鎖住，不能同時送出第二筆（不論是同一件配件、不同配件、還是
 // 買跟穿戴交錯）。
-// 無 token／token 失效／讀取失敗／回應格式不合法時，一律視為「未穿戴」＋明確
-// 提示，不用快取或假資料冒充目前真的穿戴狀態。購買／穿戴請求同理：後端沒有
+// 讀取失敗／回應格式不合法時，一律視為「未穿戴」＋明確提示，不用快取或假資料
+// 冒充目前真的穿戴狀態。購買／穿戴請求同理：後端沒有
 // 明確回傳成功前，畫面一律不假設已經買到／穿上，成功後一定重新讀一次
 // getPetEconomyData 當唯一真實狀態，不直接信任這次 API 回應本身的 result
 // 就地更新畫面——購買成功後的「可以穿戴」也是靠這次重新讀取自然打開，不是
@@ -3681,25 +3284,22 @@ function invalidatePetEconomyCache_(childId) {
 }
 
 // 進入小屋、開商店與背景核對可能在很短時間內同時要求相同資料。這裡以孩子與
-// 目前 token 為鍵共用同一個 Promise；快取只供立即顯示，購買前的正式檢查仍全部
-// 由後端交易 action 執行。token 改變時舊快取與舊 in-flight 都不會被採用。
+// 目前孩子為鍵共用同一個 Promise；快取只供立即顯示，購買前的正式檢查仍全部
+// 由後端交易 action 執行。
 function getPetEconomyDataSingleFlight_(childId, options = {}) {
-  const token = localStorage.getItem(petDeviceTokenKey(childId));
-  if (!token) return Promise.resolve({ ok: false, error: 'invalid_token', reason: 'missing' });
   const existing = _petEconomyRequests_[childId];
-  if (existing && existing.token === token) return existing.promise;
+  if (existing) return existing.promise;
 
   const cached = _petEconomyCache_[childId];
-  if (options.force !== true && cached && cached.token === token &&
+  if (options.force !== true && cached &&
       Date.now() - cached.confirmedAt <= PET_ECONOMY_CACHE_TTL_MS &&
       validatePetEconomyResult_(cached.result)) {
     return Promise.resolve({ ok: true, result: cached.result, from_cache: true });
   }
 
-  const promise = callPhase2A('getPetEconomyData', { childId, deviceToken: token }).then(function (res) {
-    if (res.ok && validatePetEconomyResult_(res.result) &&
-        localStorage.getItem(petDeviceTokenKey(childId)) === token) {
-      _petEconomyCache_[childId] = { token, result: res.result, confirmedAt: Date.now() };
+  const promise = callPhase2A('getPetEconomyData', { childId }).then(function (res) {
+    if (res.ok && validatePetEconomyResult_(res.result)) {
+      _petEconomyCache_[childId] = { result: res.result, confirmedAt: Date.now() };
     }
     return res;
   }).finally(function () {
@@ -3707,13 +3307,12 @@ function getPetEconomyDataSingleFlight_(childId, options = {}) {
       delete _petEconomyRequests_[childId];
     }
   });
-  _petEconomyRequests_[childId] = { token, promise };
+  _petEconomyRequests_[childId] = { promise };
   return promise;
 }
 
 function petShopErrorMessage_(res) {
   if (isPhase2ATransportError_(res) || res.error === 'internal_error') return '網路結果不確定，請再試一次';
-  if (res.error === 'invalid_token') return '裝置連結已失效，請重新連結這台裝置';
   if (res.error === 'unknown_child_id') return '找不到這個孩子的資料';
   if (res.error === 'error_unsynced' || res.error === 'conflict') return '後端資料需要人工核對';
   if (res.error === 'invalid_response_shape') return '後端回應格式異常，請聯絡管理員';
@@ -3817,13 +3416,13 @@ function renderPetGrowthTruth_(result) {
   }
 }
 
-// 讀取失敗／沒有 token／格式不合法時，把畫面狀態明確歸零成「未穿戴」，不留
+// 讀取失敗／格式不合法時，把畫面狀態明確歸零成「未穿戴」，不留
 // 上一次（甚至上一位孩子）的殘值，避免使用者以為看到的是目前真的穿戴狀態。
 function resetPetAccessoryEquipState_() {
   petEconomyReadSeq_ += 1; // 讓所有仍在飛行中的舊配件狀態讀取立即失效
   petShopLastResult_ = null;
   petAccessoryEquippedId_ = '';
-  // 任何「把配件狀態歸零成未知」的情境（切孩子、讀取失敗、token 失效）都必須
+  // 任何「把配件狀態歸零成未知」的情境（切孩子、讀取失敗）都必須
   // 同時釋放交易忙碌鎖並讓任何飛行中的舊購買／穿戴請求之後被視為過期——不然
   // 舊請求事後回來，可能把新孩子/新畫面誤判成還在忙碌，或用舊資料覆蓋新狀態。
   petShopRequestSeq_ += 1;
@@ -3835,9 +3434,9 @@ function resetPetAccessoryEquipState_() {
   const growthDetail = document.getElementById('pet-growth-detail');
   const growthFill = document.getElementById('pet-growth-fill');
   const careStatus = document.getElementById('pet-care-status');
-  if (growthLabel) growthLabel.textContent = '尚未連結這台裝置';
+  if (growthLabel) growthLabel.textContent = '尚未讀取成長狀態';
   if (growthExp) growthExp.textContent = '';
-  if (growthDetail) growthDetail.textContent = '連結後才能讀取真實成長狀態。';
+  if (growthDetail) growthDetail.textContent = '重新整理後讀取真實成長狀態。';
   if (growthFill) growthFill.style.width = '0%';
   if (careStatus) careStatus.textContent = '';
   const els = petRoomEls();
@@ -3847,8 +3446,6 @@ function resetPetAccessoryEquipState_() {
 
 async function refreshPetAccessoryEquipState_(childId, options = {}) {
   const readSeq = ++petEconomyReadSeq_;
-  const token = localStorage.getItem(petDeviceTokenKey(childId));
-  if (!token) { if (currentChild === childId) resetPetAccessoryEquipState_(); return; }
   const res = await getPetEconomyDataSingleFlight_(childId, options);
   if (currentChild !== childId || readSeq !== petEconomyReadSeq_) return; // 舊孩子／舊請求不得覆蓋新狀態
   if (!res.ok || !validatePetEconomyResult_(res.result)) { resetPetAccessoryEquipState_(); return; }
@@ -3867,11 +3464,10 @@ async function refreshPetAccessoryEquipState_(childId, options = {}) {
 }
 
 async function refreshPetEconomyAfterMutation_(childId) {
-  const token = safePetDeviceToken_(childId);
   const existing = _petEconomyRequests_[childId];
   // 若寫入前的 economy 讀取還在飛行，先等它收尾；不把舊回應
   // 當成寫入後確認。收尾後再發出一次 force 讀取。
-  if (existing && existing.token === token) {
+  if (existing) {
     try { await existing.promise; } catch (e) {}
   }
   invalidatePetEconomyCache_(childId);
@@ -3948,13 +3544,6 @@ async function refreshPetShop_() {
   let balanceEl = document.getElementById('pet-shop-balance');
   let listEl = document.getElementById('pet-shop-list');
   if (!statusEl || !balanceEl || !listEl) return false;
-  const token = localStorage.getItem(petDeviceTokenKey(childId));
-  if (!token) {
-    balanceEl.textContent = ''; listEl.innerHTML = '';
-    statusEl.textContent = '尚未連結這台裝置，無法讀取真實配件狀態。';
-    resetPetAccessoryEquipState_();
-    return false;
-  }
   // 效能修正：只有「這次還沒有任何已知資料可以先顯示」才用「載入中…」蓋住畫面；
   // 已經有上次讀到的資料時（openPetShop() 已經先畫出來了），背景刷新不打斷畫面，
   // 避免每次開商店/每次穿戴完都閃一下「載入中」。
@@ -4063,9 +3652,7 @@ function getOrCreatePetEquipPending_(childId, accessoryId) {
 function clearPetEquipPending_(childId) { localStorage.removeItem(petEquipPendingKey_(childId)); }
 
 async function sendPetEquipAttempt_(childId, pending) {
-  const token = localStorage.getItem(petDeviceTokenKey(childId));
-  if (!token) return { ok: false, error: 'invalid_token', reason: 'missing' };
-  const payload = { childId, deviceToken: token, clientRequestId: pending.clientRequestId, accessoryId: pending.accessoryId };
+  const payload = { childId, clientRequestId: pending.clientRequestId, accessoryId: pending.accessoryId };
   return callPetMutationWithRecovery_('equipPetAccessory', payload, pending.accessoryId);
 }
 
@@ -4079,17 +3666,6 @@ function normalizePetEquipResponse_(res, pending) {
       (r.previous_accessory_id !== null && typeof r.previous_accessory_id !== 'string') ||
       typeof r.equipped_at !== 'string') return { ok: false };
   return { ok: true, result: r };
-}
-
-function handlePetEquipAuthError_(childId, res) {
-  if (res.reason === 'credential_conflict') {
-    setPetShopStatus_('⚠️ 裝置憑證資料需要人工核對，請聯絡管理員。');
-  } else {
-    localStorage.removeItem(petDeviceTokenKey(childId));
-    invalidatePetEconomyCache_(childId);
-    resetPetAccessoryEquipState_();
-    setPetShopStatus_('裝置連結已失效，請重新連結這台裝置。');
-  }
 }
 
 async function resumePetEquip_(childId) {
@@ -4133,7 +3709,6 @@ async function resumePetEquip_(childId) {
     });
     return;
   }
-  if (res.error === 'invalid_token') { handlePetEquipAuthError_(childId, res); return; }
   if (res.error === 'accessory_stage_locked') {
     clearPetEquipPending_(childId);
     setPetShopStatus_(petAccessoryStageLockedMessage_(res, 'equip'));
@@ -4214,9 +3789,7 @@ function getOrCreatePetBuyPending_(childId, accessoryId) {
 function clearPetBuyPending_(childId) { localStorage.removeItem(petBuyPendingKey_(childId)); }
 
 async function sendPetBuyAttempt_(childId, pending) {
-  const token = localStorage.getItem(petDeviceTokenKey(childId));
-  if (!token) return { ok: false, error: 'invalid_token', reason: 'missing' };
-  const payload = { childId, deviceToken: token, clientRequestId: pending.clientRequestId, accessoryId: pending.accessoryId };
+  const payload = { childId, clientRequestId: pending.clientRequestId, accessoryId: pending.accessoryId };
   return callPetMutationWithRecovery_('buyPetAccessory', payload, pending.accessoryId);
 }
 
@@ -4257,17 +3830,6 @@ function applyPetAccessoryPurchaseTruth_(childId, buyResult) {
   return true;
 }
 
-function handlePetBuyAuthError_(childId, res) {
-  if (res.reason === 'credential_conflict') {
-    setPetShopStatus_('⚠️ 裝置憑證資料需要人工核對，請聯絡管理員。');
-  } else {
-    localStorage.removeItem(petDeviceTokenKey(childId));
-    invalidatePetEconomyCache_(childId);
-    resetPetAccessoryEquipState_();
-    setPetShopStatus_('裝置連結已失效，請重新連結這台裝置。');
-  }
-}
-
 async function resumePetBuy_(childId) {
   const pending = getPetBuyPending_(childId);
   if (!pending || petShopTxBusy_) return;
@@ -4301,7 +3863,6 @@ async function resumePetBuy_(childId) {
     });
     return;
   }
-  if (res.error === 'invalid_token') { handlePetBuyAuthError_(childId, res); return; }
   if (res.error === 'accessory_stage_locked') {
     clearPetBuyPending_(childId);
     setPetShopStatus_(petAccessoryStageLockedMessage_(res, 'buy'));
@@ -4504,9 +4065,7 @@ function normalizeTreeOpenResponse_(res, pending) {
 }
 
 async function sendTreeOpenAttempt_(childId, pending) {
-  const token = localStorage.getItem(petDeviceTokenKey(childId));
-  if (!token) return { ok: false, error: 'invalid_token', reason: 'missing' };
-  const payload = { childId, deviceToken: token, clientRequestId: pending.clientRequestId, fruitId: pending.fruitId };
+  const payload = { childId, clientRequestId: pending.clientRequestId, fruitId: pending.fruitId };
   return callPetMutationWithRecovery_('openTreeReward', payload, pending.fruitId);
 }
 
@@ -4540,7 +4099,6 @@ async function resumePendingTreeOpen_(childId) {
     state.status = 'blocked'; state.message = '同時發現照顧與果實未決請求，請先完成原照顧動作。';
     renderCurrentForestPet_(); return;
   }
-  if (!localStorage.getItem(petDeviceTokenKey(childId))) { state.status = 'locked'; state.message = '請先連結這台裝置，再用同一筆請求繼續。'; renderCurrentForestPet_(); return; }
   state.status = 'opening'; state.message = '正在打開果實，請不要重複點擊……'; renderCurrentForestPet_();
   const res = await sendTreeOpenAttempt_(childId, pending);
   if (res.ok) {
@@ -4567,8 +4125,7 @@ async function resumePendingTreeOpen_(childId) {
     if (currentChild === childId) showToast('這顆果實已經不能打開，樹的狀態已更新。', 'warn');
     return;
   }
-  if (res.error === 'invalid_token') handleTreeAuthError_(childId, res, state);
-  else if (isPhase2ATransportError_(res) || res.error === 'internal_error') { state.status = 'blocked'; state.message = '網路結果不確定，請用原請求繼續確認。'; }
+  if (isPhase2ATransportError_(res) || res.error === 'internal_error') { state.status = 'blocked'; state.message = '網路結果不確定，請用原請求繼續確認。'; }
   else if (res.error === 'conflict' || res.error === 'error_unsynced' || res.error === 'credential_conflict') { state.status = 'blocked'; state.message = '這筆果實交易需要人工核對，已保留原請求。'; }
   else if (res.error === 'configuration_error') { state.status = 'blocked'; state.message = '驚喜樹後端設定異常，請聯絡管理員。'; }
   else if (res.error === 'pet_not_ready') { await loadAll('tree-pet-not-ready'); state.status = 'blocked'; state.message = '後端尚未確認寵物，已保留原請求。'; }
@@ -4623,7 +4180,6 @@ async function playTreeRewardSequence_() {
 }
 
 function renderTreeSection_(childId, cachedOnly) {
-  const token = localStorage.getItem(petDeviceTokenKey(childId));
   const state = getTreeState_(childId);
   const pending = getTreeOpenPending_(childId);
   const foodRecord = readPetFoodPendingRecord_(childId);
@@ -4634,7 +4190,7 @@ function renderTreeSection_(childId, cachedOnly) {
   let fruits = [];
   let disabled = false;
   if (cachedOnly) {
-    status = '這是上次由後端確認的寵物快取。重新載入確認後，才能連結裝置或操作驚喜樹。';
+    status = '這是上次由後端確認的寵物快取。重新載入確認後，才能操作驚喜樹。';
     actions = `<button class="tree-action-btn secondary" onclick="manualRefreshChild()">重新載入確認</button>`;
   } else if (foodRecord.kind !== 'none' || foodGuard.kind !== 'none') {
     fruits = state.pendingFruits;
@@ -4645,9 +4201,6 @@ function renderTreeSection_(childId, cachedOnly) {
       status = `<span class="tree-warning">食物交易已進入人工核對保護，暫停打開果實。</span>`;
     } else if (foodRecord.kind !== 'valid') {
       status = `<span class="tree-warning">未決食物交易無法安全讀取，暫停打開果實，請聯絡管理員。</span>`;
-    } else if (!token) {
-      status = `<span class="tree-warning">有一筆食物交易待確認；重新連結裝置後才能繼續。</span>`;
-      actions = `<button class="tree-action-btn" onclick="openPetSetup('link_existing_pet')">重新連結這台裝置</button>`;
     } else {
       status = `<span class="tree-warning">有一筆食物交易待確認，完成後才能打開果實。</span>`;
       actions = `<button class="tree-action-btn" onclick="resumePendingPetFood_('${childId}')">繼續確認食物交易</button>`;
@@ -4661,9 +4214,6 @@ function renderTreeSection_(childId, cachedOnly) {
     } else {
       status = `<span class="tree-warning">未決照顧請求無法安全讀取，暫停打開果實。</span>`;
     }
-  } else if (!token || state.status === 'locked') {
-    status = '驚喜樹已經在這裡了。連結這台裝置後，就能查看和打開成熟果實。';
-    actions = `<button class="tree-action-btn" onclick="openPetSetup('link_existing_pet')">連結這台裝置</button>`;
   } else if (state.status === 'loading') { status = '正在看看樹上有沒有新驚喜……'; disabled = true; }
   else if (state.status === 'ready') {
     fruits = state.pendingFruits;
@@ -4720,7 +4270,7 @@ function renderForestPet(data) {
       el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-portrait"><img src="img/pet/cat_box.png" alt="紙箱裡的小貓"></div><div class="pet-encounter-text tree-warning">上次領養仍待確認，請聯絡管理員核對後再繼續。</div></div>`;
       return;
     }
-    el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-rain"><span style="left:12%">💧</span><span style="left:58%;animation-delay:.5s">💧</span></div><div class="pet-encounter-portrait"><img src="img/pet/cat_box.png" alt="紙箱裡一隻可憐的迷路小貓"></div><div class="pet-encounter-text">你在森林餐廳後院發現一隻迷路的小貓……<br>要帶牠回家嗎？</div><div class="pet-encounter-actions"><button class="pet-adopt-btn" onclick="openPetSetup('pair_then_adopt')">💕 帶牠回家</button><button class="pet-decline-btn" onclick="declinePet()">先不要</button></div></div>`;
+    el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-rain"><span style="left:12%">💧</span><span style="left:58%;animation-delay:.5s">💧</span></div><div class="pet-encounter-portrait"><img src="img/pet/cat_box.png" alt="紙箱裡一隻可憐的迷路小貓"></div><div class="pet-encounter-text">你在森林餐廳後院發現一隻迷路的小貓……<br>要帶牠回家嗎？</div><div class="pet-encounter-actions"><button class="pet-adopt-btn" onclick="openPetSetup()">💕 帶牠回家</button><button class="pet-decline-btn" onclick="declinePet()">先不要</button></div></div>`;
     return;
   }
   if (classified.kind === 'invalid') {
@@ -5052,7 +4602,6 @@ function renderPetFood() {
   const accessoryBlocked = hasPetAccessoryProtection_(childId);
   const careBlocked = hasPetCareProtection_(childId);
   const serverPetPresent = classifyServerPet_(allData[childId]).kind === 'present';
-  const token = safePetDeviceToken_(childId);
   const busy = state.status === 'sending';
   const economy = validatePetEconomyResult_(petShopLastResult_) ? petShopLastResult_ : null;
   let notice = economy
@@ -5060,7 +4609,7 @@ function renderPetFood() {
     : '正在讀取後端庫存與今日餵食狀態…';
   let noticeClass = '';
   let resumeHtml = '';
-  let actionsBlocked = !serverPetPresent || !token || !economy || !!treePending || accessoryBlocked || careBlocked || foodRecord.kind !== 'none' ||
+  let actionsBlocked = !serverPetPresent || !economy || !!treePending || accessoryBlocked || careBlocked || foodRecord.kind !== 'none' ||
     guardRecord.kind !== 'none' || busy || state.status === 'blocked';
 
   if (!serverPetPresent) {
@@ -5084,10 +4633,8 @@ function renderPetFood() {
     const meta = getPetFoodMeta_(pending.foodId);
     notice = state.message || ('有一筆「' + meta.name + '」' + (pending.action === 'buyPetFood' ? '購買' : '餵食') + '待後端確認。');
     noticeClass = ' warning';
-    if (!busy && token && !treePending && !accessoryBlocked && !state.guarded) {
+    if (!busy && !treePending && !accessoryBlocked && !state.guarded) {
       resumeHtml = `<button class="tree-action-btn pet-food-resume-btn" onclick="resumePendingPetFood_('${childId}')">繼續確認原請求</button>`;
-    } else if (!token) {
-      resumeHtml = `<button class="tree-action-btn pet-food-resume-btn" onclick="openPetSetup('link_existing_pet')">重新連結這台裝置</button>`;
     }
   } else if (treePending) {
     notice = '有一筆果實交易待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
@@ -5095,8 +4642,6 @@ function renderPetFood() {
     notice = '有一筆配件交易待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
   } else if (careBlocked) {
     notice = '有一筆摸摸或洗澡請求待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
-  } else if (!token) {
-    notice = '連結這台裝置後，才能向後端購買或餵食。'; noticeClass = ' warning';
   } else if (state.message) {
     notice = state.message;
     noticeClass = state.status === 'blocked' || state.status === 'locked' ? ' warning' : '';
@@ -5690,16 +5235,11 @@ async function resumePendingPetCare_(childId) {
       : '未決照顧請求損壞，已保留紀錄，請聯絡管理員。';
     renderPetCarePendingState_(childId); return;
   }
-  if (!safePetDeviceToken_(childId)) {
-    state.status = 'blocked'; state.message = '裝置連結已失效；原照顧請求已保留，重新連結後可繼續確認。';
-    renderPetCarePendingState_(childId); return;
-  }
   const pending = record.pending;
   state.status = 'sending'; state.message = '正在請後端確認這次' + (pending.careType === 'touch' ? '摸摸' : '洗澡') + '，請不要重複點擊…';
   renderPetCarePendingState_(childId);
   state.inFlight = (async function () {
-    const token = safePetDeviceToken_(childId);
-    const payload = { childId, deviceToken: token, clientRequestId: pending.clientRequestId,
+    const payload = { childId, clientRequestId: pending.clientRequestId,
       contractVersion: 'p2.1' };
     const res = await callPetMutationWithRecovery_(pending.action, payload, pending.careType);
     if (res && res.ok === true) {
@@ -5741,12 +5281,6 @@ async function resumePendingPetCare_(childId) {
       }
       return;
     }
-    if (error === 'invalid_token') {
-      if (!res.reason || res.reason === 'expired' || res.reason === 'revoked' || res.reason === 'not_found' || res.reason === 'missing') {
-        removePetDeviceTokenSafely_(childId);
-      }
-      state.status = 'blocked'; state.message = '裝置連結無法驗證；原請求已保留。'; return;
-    }
     if (error === 'network_error' || error === 'timeout' || error === 'internal_error') {
       state.status = 'blocked'; state.message = '網路結果不確定，請稍後用同一個照顧動作繼續確認。'; return;
     }
@@ -5762,7 +5296,6 @@ async function startPetCareAction_(careType) {
   if (classifyServerPet_(allData[childId]).kind !== 'present') {
     showToast('請先重新載入，確認後端寵物狀態。', 'warn'); return;
   }
-  if (!safePetDeviceToken_(childId)) { showToast('請先連結這台裝置。', 'warn'); return; }
   if (!validatePetEconomyResult_(petShopLastResult_)) {
     showToast('正在確認後端成長狀態，請稍後再試。', 'warn'); return;
   }
@@ -5821,7 +5354,7 @@ async function manualRefreshChild() {
     ? petOutcome.ok
     : await loadChildSection_(currentSubTab, currentChild, { reason: 'manual-refresh', force: true });
   let treeLoaded = true;
-  if (loaded && currentSubTab === 'forestpet' && classifyServerPet_(allData[currentChild]).kind === 'present' && localStorage.getItem(petDeviceTokenKey(currentChild))) {
+  if (loaded && currentSubTab === 'forestpet' && classifyServerPet_(allData[currentChild]).kind === 'present') {
     treeLoaded = await refreshTreeStatus_(currentChild, { reason: 'manual-refresh' });
   }
   if (btn) { btn.disabled = false; btn.innerHTML = '🔄 立即更新'; }
