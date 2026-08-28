@@ -3152,6 +3152,9 @@ async function startPetFoodAction_(action, foodId) {
   if (hasPetCareProtection_(childId)) {
     showToast('有一筆摸摸或洗澡請求待確認，請先完成原請求。', 'warn'); return;
   }
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    showToast('有一筆神奇果實食用請求待確認，請先完成原請求。', 'warn'); return;
+  }
   if (hasPetFoodProtection_(childId)) {
     showToast('已有一筆食物交易待確認，請先繼續原請求。', 'warn'); return;
   }
@@ -3159,6 +3162,7 @@ async function startPetFoodAction_(action, foodId) {
     const confirmed = await showConfirm('確定購買「' + meta.name + '」嗎？\n後端將扣除 ' + meta.priceCoins + ' 枚代幣。');
     if (!confirmed || currentChild !== childId) return;
     if (classifyServerPet_(allData[childId]).kind !== 'present' || getTreeOpenPending_(childId) || hasPetCareProtection_(childId) ||
+        (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) ||
         hasPetFoodProtection_(childId) || hasPetAccessoryProtection_(childId)) {
       showToast('狀態已改變，請重新確認。', 'warn'); return;
     }
@@ -3350,7 +3354,8 @@ function validatePetEconomyResult_(result) {
       growth.exp_to_next !== (expectedStage === 3 ? 0 : expectedEnd - growth.exp_points)) return false;
   const care = result.daily_care;
   if (!care || typeof care !== 'object' || care.date_taipei !== result.as_of_taipei ||
-      typeof care.fed !== 'boolean' || typeof care.touched !== 'boolean' || typeof care.bathed !== 'boolean') return false;
+      typeof care.fed !== 'boolean' || typeof care.touched !== 'boolean' || typeof care.bathed !== 'boolean' ||
+      typeof care.tree_fruit_consumed !== 'boolean') return false;
   if (!Array.isArray(result.foods) || result.foods.length !== 3) return false;
   const expectedFoods = new Set(['milk', 'fish', 'chicken']);
   for (const food of result.foods) {
@@ -3360,6 +3365,18 @@ function validatePetEconomyResult_(result) {
     expectedFoods.delete(food.food_id);
   }
   if (expectedFoods.size !== 0) return false;
+  if (!Array.isArray(result.tree_fruits) || result.tree_fruits.length !== 2) return false;
+  const expectedTreeFruits = new Map([
+    ['tree_sun_fruit', { name: '陽光果實', emoji: '🟠', exp: 10 }],
+    ['tree_starlight_fruit', { name: '星光果實', emoji: '🟣', exp: 20 }]
+  ]);
+  for (const fruit of result.tree_fruits) {
+    const expected = fruit && expectedTreeFruits.get(fruit.fruit_id);
+    if (!expected || fruit.fruit_name !== expected.name || fruit.display_emoji !== expected.emoji ||
+        fruit.exp_reward !== expected.exp || !Number.isInteger(fruit.quantity) || fruit.quantity < 0) return false;
+    expectedTreeFruits.delete(fruit.fruit_id);
+  }
+  if (expectedTreeFruits.size !== 0) return false;
   if (result.equipped_accessory_id !== null && typeof result.equipped_accessory_id !== 'string') return false;
   if (!Array.isArray(result.accessories)) return false;
 
@@ -3407,7 +3424,8 @@ function renderPetGrowthTruth_(result) {
     const chips = [
       { done: result.daily_care.fed, label: '🍽️ 今日餵食' },
       { done: result.daily_care.touched, label: '💕 今日摸摸' },
-      { done: result.daily_care.bathed, label: '🛁 今日洗澡' }
+      { done: result.daily_care.bathed, label: '🛁 今日洗澡' },
+      { done: result.daily_care.tree_fruit_consumed, label: '✨ 今日神奇果實' }
     ];
     careStatus.innerHTML = chips.map(function (chip) {
       return '<span class="pet-care-chip' + (chip.done ? ' done' : '') + '">' +
@@ -3671,6 +3689,9 @@ function normalizePetEquipResponse_(res, pending) {
 async function resumePetEquip_(childId) {
   const pending = getPetEquipPending_(childId);
   if (!pending || petShopTxBusy_) return;
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    setPetShopStatus_('⚠️ 有一筆神奇果實食用請求待確認，完成後才能穿戴配件。'); return;
+  }
   if (hasPetFoodProtection_(childId)) {
     setPetShopStatus_('⚠️ 有一筆食物交易待確認，完成後才能穿戴配件。');
     return;
@@ -3738,6 +3759,9 @@ async function resumePetEquip_(childId) {
 async function equipPetAccessoryClick_(accessoryId) {
   const childId = currentChild;
   if (!petShopLastResult_ || petShopTxBusy_ || petShopLastResult_.blocked) return;
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    setPetShopStatus_('⚠️ 有一筆神奇果實食用請求待確認，完成後才能穿戴配件。'); return;
+  }
   const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
   if (!entry || !entry.owned || entry.equipped) return; // 未擁有或已穿戴：按鈕本來就不該可點，這裡再擋一次
   if (!entry.unlocked) {
@@ -3833,6 +3857,9 @@ function applyPetAccessoryPurchaseTruth_(childId, buyResult) {
 async function resumePetBuy_(childId) {
   const pending = getPetBuyPending_(childId);
   if (!pending || petShopTxBusy_) return;
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    setPetShopStatus_('⚠️ 有一筆神奇果實食用請求待確認，完成後才能購買配件。'); return;
+  }
   if (hasPetFoodProtection_(childId)) {
     setPetShopStatus_('⚠️ 有一筆食物交易待確認，完成後才能購買配件。');
     return;
@@ -3898,6 +3925,9 @@ async function resumePetBuy_(childId) {
 async function buyPetAccessoryClick_(accessoryId) {
   const childId = currentChild;
   if (!petShopLastResult_ || petShopTxBusy_ || petShopLastResult_.blocked) return;
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    setPetShopStatus_('⚠️ 有一筆神奇果實食用請求待確認，完成後才能購買配件。'); return;
+  }
   const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
   if (!entry || entry.owned) return; // 已擁有：按鈕本來就不該可點，這裡再擋一次
   if (!entry.unlocked) {
@@ -4001,6 +4031,7 @@ function renderPetShopList_(result) {
     const btn = document.createElement('button');
     const foodTxBlocked = hasPetFoodProtection_(currentChild);
     const careTxBlocked = hasPetCareProtection_(currentChild);
+    const treeFruitTxBlocked = typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(currentChild);
     const isThisTxTarget = petShopTxBusy_ && petShopTxTargetId_ === a.accessory_id;
     if (unlock.locked) {
       btn.className = 'pet-shop-action-btn locked';
@@ -4013,7 +4044,7 @@ function renderPetShopList_(result) {
     } else if (a.owned) {
       btn.className = 'pet-shop-action-btn';
       btn.textContent = (isThisTxTarget && petShopTxKind_ === 'equip') ? '穿戴中…' : '穿戴';
-      btn.disabled = petShopTxBusy_ || result.blocked || foodTxBlocked || careTxBlocked;
+      btn.disabled = petShopTxBusy_ || result.blocked || foodTxBlocked || careTxBlocked || treeFruitTxBlocked;
       if (!btn.disabled) btn.onclick = function () { void equipPetAccessoryClick_(a.accessory_id); };
     } else if (result.balance < a.price_coins) {
       btn.className = 'pet-shop-action-btn';
@@ -4022,7 +4053,7 @@ function renderPetShopList_(result) {
     } else {
       btn.className = 'pet-shop-action-btn';
       btn.textContent = (isThisTxTarget && petShopTxKind_ === 'buy') ? '購買中…' : '購買';
-      btn.disabled = petShopTxBusy_ || result.blocked || foodTxBlocked || careTxBlocked;
+      btn.disabled = petShopTxBusy_ || result.blocked || foodTxBlocked || careTxBlocked || treeFruitTxBlocked;
       if (!btn.disabled) btn.onclick = function () { void buyPetAccessoryClick_(a.accessory_id); };
     }
 
@@ -4055,11 +4086,15 @@ function normalizeTreeOpenResponse_(res, pending) {
   if (!res || !res.ok || !res.result || typeof res.result !== 'object') return { ok: false };
   const r = res.result;
   if (r.fruit_id !== pending.fruitId || !/^cycle_[1-9][0-9]*$/.test(r.cycle_id || '') || r.fruit_tier !== 'general') return { ok: false };
-  if (r.reward_type === 'coin' && Number.isInteger(r.amount) && r.amount > 0 && Number.isInteger(r.new_balance) && r.new_balance >= 0) {
+  if (r.schema_version !== 3 || !r.accessory_bonus || r.accessory_bonus.eligible !== false ||
+      r.accessory_bonus.won !== false || r.accessory_bonus.awarded_coins !== 0) return { ok: false };
+  if (r.reward_type === 'coin' && [3, 6, 9, 15, 30].includes(r.amount) && Number.isInteger(r.new_balance) && r.new_balance >= 0) {
     return { ok: true, result: { fruit_id: r.fruit_id, reward_type: 'coin', amount: r.amount, new_balance: r.new_balance } };
   }
-  if (r.reward_type === 'food' && (r.item_id === 'fish' || r.item_id === 'chicken') && Number.isInteger(r.quantity_after) && r.quantity_after >= 1) {
-    return { ok: true, result: { fruit_id: r.fruit_id, reward_type: 'food', item_id: r.item_id, quantity_after: r.quantity_after } };
+  if (r.reward_type === 'tree_fruit' && (r.item_id === 'tree_sun_fruit' || r.item_id === 'tree_starlight_fruit') &&
+      Number.isInteger(r.quantity_after) && r.quantity_after >= 1) {
+    return { ok: true, result: { fruit_id: r.fruit_id, reward_type: 'tree_fruit',
+      item_id: r.item_id, quantity_after: r.quantity_after } };
   }
   return { ok: false };
 }
@@ -4081,6 +4116,10 @@ async function openTreeFruit_(fruitId) {
     state.status = 'blocked'; state.message = '有一筆照顧請求待確認，完成後才能打開果實。';
     renderCurrentForestPet_(); return;
   }
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    state.status = 'blocked'; state.message = '有一筆神奇果實食用請求待確認，完成後才能打開果實。';
+    renderCurrentForestPet_(); return;
+  }
   if (!state.pendingFruits.some(f => f.fruit_id === fruitId)) return;
   const pending = getOrCreateTreeOpenPending_(childId, fruitId);
   if (!pending) { state.status = 'blocked'; state.message = '已有另一顆果實待確認，不能建立新請求。'; renderCurrentForestPet_(); return; }
@@ -4099,18 +4138,15 @@ async function resumePendingTreeOpen_(childId) {
     state.status = 'blocked'; state.message = '同時發現照顧與果實未決請求，請先完成原照顧動作。';
     renderCurrentForestPet_(); return;
   }
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    state.status = 'blocked'; state.message = '同時發現神奇果實食用與開果實未決請求，請先完成原請求。';
+    renderCurrentForestPet_(); return;
+  }
   state.status = 'opening'; state.message = '正在打開果實，請不要重複點擊……'; renderCurrentForestPet_();
   const res = await sendTreeOpenAttempt_(childId, pending);
   if (res.ok) {
     const normalized = normalizeTreeOpenResponse_(res, pending);
     if (!normalized.ok) { state.status = 'blocked'; state.message = '獎勵回應格式無法確認，已保留原請求。'; renderCurrentForestPet_(); return; }
-    if (normalized.result.reward_type === 'food') {
-      getPetFoodState_(childId).lastConfirmed[normalized.result.item_id] = {
-        quantityAfter: normalized.result.quantity_after,
-        action: 'openTreeReward',
-        confirmedAt: Date.now()
-      };
-    }
     if (currentChild === childId && currentSubTab === 'forestpet') await playTreeRewardSequence_(normalized.result);
     clearTreeOpenPending_(childId);
     if (currentChild === childId && currentSubTab === 'forestpet') showTreeRewardResult_(normalized.result);
@@ -4133,7 +4169,11 @@ async function resumePendingTreeOpen_(childId) {
   renderCurrentForestPet_();
 }
 
-function treeRewardFoodLabel_(itemId) { return itemId === 'fish' ? '魚乾' : itemId === 'chicken' ? '雞肉條' : '食物'; }
+function treeRewardFruitMeta_(itemId) {
+  if (itemId === 'tree_sun_fruit') return { name: '陽光果實', emoji: '🟠', exp: 10 };
+  if (itemId === 'tree_starlight_fruit') return { name: '星光果實', emoji: '🟣', exp: 20 };
+  return null;
+}
 function showTreeRewardResult_(result) {
   const icon = document.getElementById('tree-reward-icon');
   const title = document.getElementById('tree-reward-title');
@@ -4142,9 +4182,10 @@ function showTreeRewardResult_(result) {
     icon.textContent = '🪙'; title.textContent = '得到 ' + result.amount + ' 代幣！';
     copy.textContent = '後端已完成入帳。\n最新代幣餘額：' + result.new_balance;
   } else {
-    const label = treeRewardFoodLabel_(result.item_id);
-    icon.textContent = result.item_id === 'fish' ? '🐟' : '🍗'; title.textContent = '得到' + label + '！';
-    copy.textContent = label + '已由後端安全放入背包。\n本次開獎完成時的後端數量：' + result.quantity_after + '\n打開貓咪放大頁即可查看並餵食。';
+    const meta = treeRewardFruitMeta_(result.item_id);
+    icon.textContent = meta.emoji; title.textContent = '得到' + meta.name + '！';
+    copy.textContent = meta.name + '已放入神奇果實背包。\n食用可獲得 +' + meta.exp +
+      ' EXP；兩種神奇果實每天合計最多吃一顆。\n目前數量：' + result.quantity_after;
   }
   document.getElementById('tree-reward-overlay').classList.add('show');
 }
@@ -4285,7 +4326,7 @@ function renderForestPet(data) {
   }
   capturePetZoomBeforeRender_();
   stopPetRoom();
-  el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><div class="pet-room-walk-pair frame-a"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-a" id="pet-room-walk-acc-a" alt=""></div><div class="pet-room-walk-pair frame-b"><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-b" id="pet-room-walk-acc-b" alt=""></div></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-a" id="pet-room-idle-acc-a" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-b" id="pet-room-idle-acc-b" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-room-static-acc" alt=""></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div><button class="pet-shop-btn" onclick="event.stopPropagation(); openPetShop()">🛒 配件商店</button><div class="pet-shop-modal" id="pet-shop-modal"><div class="pet-shop-panel"><button class="pet-shop-close" onclick="closePetShop()">✕</button><div class="pet-shop-title">🛒 配件商店</div><div class="pet-context-tip" role="note">長大後可以購買更多配件；穿著配件開驚喜果實，還可能多得到代幣。</div><div class="pet-shop-balance" id="pet-shop-balance"></div><div class="pet-shop-status" id="pet-shop-status"></div><div class="pet-shop-list" id="pet-shop-list"></div></div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><div class="pet-portrait-wrap" id="pet-portrait-wrap"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-portrait-acc" alt=""></div></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-context-tip" role="note">每天摸摸、洗澡和餵食，可以得到成長 EXP。</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
+  el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><div class="pet-room-walk-pair frame-a"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-a" id="pet-room-walk-acc-a" alt=""></div><div class="pet-room-walk-pair frame-b"><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-b" id="pet-room-walk-acc-b" alt=""></div></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-a" id="pet-room-idle-acc-a" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-b" id="pet-room-idle-acc-b" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-room-static-acc" alt=""></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div><button class="pet-shop-btn" onclick="event.stopPropagation(); openPetShop()">🛒 配件商店</button><div class="pet-shop-modal" id="pet-shop-modal"><div class="pet-shop-panel"><button class="pet-shop-close" onclick="closePetShop()">✕</button><div class="pet-shop-title">🛒 配件商店</div><div class="pet-context-tip" role="note">長大後可以購買更多配件，替森林夥伴換上喜歡的造型。</div><div class="pet-shop-balance" id="pet-shop-balance"></div><div class="pet-shop-status" id="pet-shop-status"></div><div class="pet-shop-list" id="pet-shop-list"></div></div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><div class="pet-portrait-wrap" id="pet-portrait-wrap"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-portrait-acc" alt=""></div></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-context-tip" role="note">每天摸摸、洗澡和餵食，可以得到成長 EXP。</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
   const petHintEl = document.getElementById('pet-hint');
   if (petHintEl) {
     petHintEl.insertAdjacentHTML('afterend', `<div class="pet-growth-card" id="pet-growth-card"><div class="pet-growth-title"><span id="pet-growth-stage-label">成長狀態載入中…</span><span id="pet-growth-exp"></span></div><div class="pet-exp-bar" aria-label="寵物成長進度"><div class="pet-exp-fill" id="pet-growth-fill"></div></div><div class="pet-context-tip" role="note">累積 EXP，森林夥伴會從幼貓成長成少年貓、成貓。</div><div class="pet-growth-detail" id="pet-growth-detail">正在讀取後端 EXP</div><div class="pet-care-status" id="pet-care-status"></div></div>`);
@@ -4591,6 +4632,106 @@ function updatePetStatsUI() {
   if (validatePetEconomyResult_(petShopLastResult_)) renderPetGrowthTruth_(petShopLastResult_);
 }
 
+function treeFruitConsumePendingKey_(childId) { return 'forest_tree_fruit_consume_pending_' + childId; }
+function readTreeFruitConsumePending_(childId) {
+  try {
+    const raw = localStorage.getItem(treeFruitConsumePendingKey_(childId));
+    if (raw === null) return { kind: 'none' };
+    let value;
+    try { value = JSON.parse(raw); } catch (e) { return { kind: 'invalid' }; }
+    const valid = value && value.version === 1 && value.childId === childId &&
+      (value.fruitId === 'tree_sun_fruit' || value.fruitId === 'tree_starlight_fruit') &&
+      typeof value.clientRequestId === 'string' &&
+      /^treefruit-eat-[a-z]+-[0-9]+-[0-9a-z]+$/i.test(value.clientRequestId) &&
+      typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt));
+    return valid ? { kind: 'valid', pending: value } : { kind: 'invalid' };
+  } catch (e) { return { kind: 'storage_error' }; }
+}
+function hasTreeFruitConsumeProtection_(childId) {
+  return readTreeFruitConsumePending_(childId).kind !== 'none';
+}
+function storeTreeFruitConsumePending_(pending) {
+  try {
+    const serialized = JSON.stringify(pending);
+    localStorage.setItem(treeFruitConsumePendingKey_(pending.childId), serialized);
+    const verified = readTreeFruitConsumePending_(pending.childId);
+    return verified.kind === 'valid' && JSON.stringify(verified.pending) === serialized;
+  } catch (e) { return false; }
+}
+function clearTreeFruitConsumePending_(childId) {
+  try { localStorage.removeItem(treeFruitConsumePendingKey_(childId)); return readTreeFruitConsumePending_(childId).kind === 'none'; }
+  catch (e) { return false; }
+}
+function normalizeTreeFruitConsumeResponse_(res, pending) {
+  const r = res && res.ok && res.result;
+  const expected = pending.fruitId === 'tree_sun_fruit' ? 10 : 20;
+  if (!r || r.schema_version !== 1 || r.fruit_id !== pending.fruitId || r.exp_reward !== expected ||
+      !Number.isInteger(r.exp_points_before) || r.exp_points_before < 0 || r.exp_points_before > 3600 ||
+      !Number.isInteger(r.exp_gained) || r.exp_gained !== Math.min(expected, 3600 - r.exp_points_before) ||
+      r.exp_points !== r.exp_points_before + r.exp_gained || r.exp_points > 3600 ||
+      r.stage !== (r.exp_points >= 3600 ? 3 : (r.exp_points >= 1200 ? 2 : 1)) ||
+      !Number.isInteger(r.quantity_after) || r.quantity_after < 0 ||
+      typeof r.consume_date_taipei !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(r.consume_date_taipei)) return null;
+  return r;
+}
+async function resumePendingTreeFruitConsume_(childId) {
+  const record = readTreeFruitConsumePending_(childId);
+  if (record.kind !== 'valid') return;
+  const pending = record.pending;
+  const payload = { childId, fruitId: pending.fruitId, clientRequestId: pending.clientRequestId,
+    contractVersion: 'p2b.1' };
+  renderPetFood();
+  const res = await callPetMutationWithRecovery_('consumeTreeFruit', payload, pending.fruitId);
+  if (res && res.ok) {
+    const normalized = normalizeTreeFruitConsumeResponse_(res, pending);
+    if (!normalized) { showToast('⚠️ 神奇果實回應格式無法確認，已保留原請求', 'warn'); return; }
+    if (!clearTreeFruitConsumePending_(childId)) {
+      showToast('⚠️ 已食用，但瀏覽器無法清除未決紀錄，請勿重複操作', 'warn'); return;
+    }
+    const meta = treeRewardFruitMeta_(pending.fruitId);
+    if (currentChild === childId) {
+      const hint = document.getElementById('pet-hint');
+      if (hint) hint.textContent = meta.name + '發出光芒！獲得 ' + normalized.exp_gained + ' EXP。';
+      playPetFeedAnimation(meta.emoji);
+      showToast('✨ ' + meta.name + '食用成功！', 'success');
+    }
+    invalidatePetEconomyCache_(childId);
+    await refreshPetEconomyAfterMutation_(childId);
+    return;
+  }
+  const error = res && res.error;
+  if (error === 'tree_fruit_already_consumed_today') {
+    clearTreeFruitConsumePending_(childId);
+    showToast('今天已經吃過神奇果實了，明天再吃吧！', 'warn');
+    invalidatePetEconomyCache_(childId); await refreshPetEconomyAfterMutation_(childId); return;
+  }
+  if (error === 'insufficient_inventory' || error === 'invalid_request' || error === 'unknown_child_id' ||
+      error === 'client_upgrade_required' || error === 'pet_not_found') {
+    clearTreeFruitConsumePending_(childId);
+    showToast(error === 'insufficient_inventory' ? '背包裡沒有這顆神奇果實。' : '神奇果實目前無法食用。', 'warn');
+    renderPetFood(); return;
+  }
+  showToast('⚠️ 神奇果實結果尚未確認，請保留此頁後再繼續確認', 'warn');
+  renderPetFood();
+}
+async function petConsumeTreeFruit_(fruitId) {
+  const childId = currentChild;
+  if (hasTreeFruitConsumeProtection_(childId)) { await resumePendingTreeFruitConsume_(childId); return; }
+  if (!validatePetEconomyResult_(petShopLastResult_) || petShopLastResult_.daily_care.tree_fruit_consumed) {
+    showToast('今天已經吃過神奇果實了，明天再吃吧！', 'warn'); return;
+  }
+  const fruit = petShopLastResult_.tree_fruits.find(item => item.fruit_id === fruitId);
+  if (!fruit || fruit.quantity < 1 || hasPetFoodProtection_(childId) || hasPetAccessoryProtection_(childId) ||
+      hasPetCareProtection_(childId) || getTreeOpenPending_(childId)) return;
+  const pending = { version: 1, childId, fruitId,
+    clientRequestId: 'treefruit-eat-' + childId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+    createdAt: new Date().toISOString() };
+  if (!storeTreeFruitConsumePending_(pending)) {
+    showToast('⚠️ 瀏覽器無法安全保存未決請求，因此沒有送出', 'warn'); return;
+  }
+  await resumePendingTreeFruitConsume_(childId);
+}
+
 function renderPetFood() {
   const grid = document.getElementById('pet-food-grid');
   if (!grid) return;
@@ -4601,6 +4742,7 @@ function renderPetFood() {
   const treePending = getTreeOpenPending_(childId);
   const accessoryBlocked = hasPetAccessoryProtection_(childId);
   const careBlocked = hasPetCareProtection_(childId);
+  const treeFruitConsumeRecord = readTreeFruitConsumePending_(childId);
   const serverPetPresent = classifyServerPet_(allData[childId]).kind === 'present';
   const busy = state.status === 'sending';
   const economy = validatePetEconomyResult_(petShopLastResult_) ? petShopLastResult_ : null;
@@ -4609,7 +4751,8 @@ function renderPetFood() {
     : '正在讀取後端庫存與今日餵食狀態…';
   let noticeClass = '';
   let resumeHtml = '';
-  let actionsBlocked = !serverPetPresent || !economy || !!treePending || accessoryBlocked || careBlocked || foodRecord.kind !== 'none' ||
+  let actionsBlocked = !serverPetPresent || !economy || !!treePending || accessoryBlocked || careBlocked ||
+    treeFruitConsumeRecord.kind !== 'none' || foodRecord.kind !== 'none' ||
     guardRecord.kind !== 'none' || busy || state.status === 'blocked';
 
   if (!serverPetPresent) {
@@ -4642,6 +4785,14 @@ function renderPetFood() {
     notice = '有一筆配件交易待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
   } else if (careBlocked) {
     notice = '有一筆摸摸或洗澡請求待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
+  } else if (treeFruitConsumeRecord.kind !== 'none') {
+    notice = treeFruitConsumeRecord.kind === 'valid'
+      ? '有一筆神奇果實食用請求待確認，請勿重複操作。'
+      : '神奇果實未決紀錄無法安全讀取，請聯絡管理員。';
+    noticeClass = ' warning';
+    if (treeFruitConsumeRecord.kind === 'valid') {
+      resumeHtml = `<button class="tree-action-btn pet-food-resume-btn" onclick="resumePendingTreeFruitConsume_('${childId}')">繼續確認神奇果實</button>`;
+    }
   } else if (state.message) {
     notice = state.message;
     noticeClass = state.status === 'blocked' || state.status === 'locked' ? ' warning' : '';
@@ -4661,8 +4812,16 @@ function renderPetFood() {
     const feedLabel = fedToday ? '今日已餵' : '餵食';
     return `<div class="pet-food-card"><div class="pet-food-emoji">${item.emoji}</div><div class="pet-food-body"><div class="pet-food-name">${item.name}</div><div class="pet-food-desc">購買 ${item.priceCoins} 代幣 · 首次餵食隨機 +6/+10/+14 EXP</div><div class="pet-food-stock">${stock}</div></div><div class="pet-food-actions"><button class="pet-feed-btn pet-buy-btn" aria-label="購買${item.name}" onclick="petBuyFood('${item.foodId}')"${buyDisabled}>購買</button><button class="pet-feed-btn" aria-label="餵食${item.name}" onclick="petFeed('${item.foodId}')"${feedDisabled}>${feedLabel}</button></div></div>`;
   }).join('');
+  const magicalFruitCards = economy ? economy.tree_fruits.map(fruit => {
+    const consumed = economy.daily_care.tree_fruit_consumed;
+    const disabled = actionsBlocked || consumed || fruit.quantity < 1 ? ' disabled' : '';
+    const label = consumed ? '今日已吃' : (fruit.quantity < 1 ? '尚未獲得' : '食用');
+    return `<div class="pet-food-card pet-tree-fruit-card"><div class="pet-food-emoji">${fruit.display_emoji}</div><div class="pet-food-body"><div class="pet-food-name">${fruit.fruit_name}</div><div class="pet-food-desc">驚喜樹限定 · 食用 +${fruit.exp_reward} EXP</div><div class="pet-food-stock">獨立庫存：${fruit.quantity} 顆</div></div><div class="pet-food-actions"><button class="pet-feed-btn" aria-label="食用${fruit.fruit_name}" onclick="petConsumeTreeFruit_('${fruit.fruit_id}')"${disabled}>${label}</button></div></div>`;
+  }).join('') : '';
   grid.setAttribute('aria-busy', busy ? 'true' : 'false');
-  grid.innerHTML = `<div class="pet-food-notice${noticeClass}">${notice}${resumeHtml}</div>${cards}`;
+  grid.innerHTML = `<div class="pet-food-notice${noticeClass}">${notice}${resumeHtml}</div>${cards}` +
+    `<div class="section-title" style="padding:10px 2px 4px;">✨ 神奇果實</div>` +
+    `<div class="pet-context-tip" role="note">陽光果實 +10 EXP、星光果實 +20 EXP；兩種每天合計最多吃一顆，不影響普通餵食。</div>` + magicalFruitCards;
 }
 
 function petBouncePortrait() {
@@ -5235,6 +5394,10 @@ async function resumePendingPetCare_(childId) {
       : '未決照顧請求損壞，已保留紀錄，請聯絡管理員。';
     renderPetCarePendingState_(childId); return;
   }
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    state.status = 'blocked'; state.message = '有一筆神奇果實食用請求待確認，請先完成原請求。';
+    renderPetCarePendingState_(childId); return;
+  }
   const pending = record.pending;
   state.status = 'sending'; state.message = '正在請後端確認這次' + (pending.careType === 'touch' ? '摸摸' : '洗澡') + '，請不要重複點擊…';
   renderPetCarePendingState_(childId);
@@ -5309,7 +5472,8 @@ async function startPetCareAction_(careType) {
       return;
     }
   }
-  if (hasPetFoodProtection_(childId) || hasPetAccessoryProtection_(childId) || getTreeOpenPending_(childId)) {
+  if (hasPetFoodProtection_(childId) || hasPetAccessoryProtection_(childId) || getTreeOpenPending_(childId) ||
+      (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId))) {
     showToast('有另一筆寵物交易待確認，請先完成原請求。', 'warn'); return;
   }
   const existing = readPetCarePending_(childId);
