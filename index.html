@@ -256,11 +256,15 @@ body {
   background: white; border: var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm);
   display: flex; align-items: center; gap: 12px; padding: 10px 14px;
 }
+.pet-shop-card.locked { background: #f4f1ed; border-color: #bdb4aa; box-shadow: none; }
+.pet-shop-card.locked .pet-shop-emoji { filter: grayscale(0.55); opacity: 0.62; }
 .pet-shop-emoji { font-size: 28px; width: 52px; height: 52px; text-align: center; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .pet-shop-emoji-img { width: 52px; height: 52px; object-fit: contain; display: block; }
 .pet-shop-body { flex: 1; min-width: 0; }
 .pet-shop-name { font-size: 14px; font-weight: 700; color: var(--cocoa); }
 .pet-shop-price { font-size: 11px; color: var(--cocoa-soft); margin-top: 2px; }
+.pet-shop-unlock { font-size: 11px; color: #765f50; font-weight: 700; margin-top: 3px; }
+.pet-shop-unlock-exp { font-size: 11px; color: #8b6c58; margin-top: 1px; }
 .pet-shop-action-btn {
   background: var(--mint); color: white; border: 2px solid var(--cocoa); border-radius: 10px;
   padding: 6px 12px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
@@ -3762,8 +3766,11 @@ function validatePetEconomyResult_(result) {
       typeof a.accessory_name === 'string' &&
       typeof a.display_emoji === 'string' &&
       Number.isInteger(a.price_coins) && a.price_coins >= 0 &&
+      Number.isInteger(a.required_stage) && a.required_stage >= 1 && a.required_stage <= 3 &&
+      typeof a.unlocked === 'boolean' &&
       typeof a.owned === 'boolean' && typeof a.equipped === 'boolean';
     if (!shapeOk) return false;
+    if (a.unlocked !== (growth.stage >= a.required_stage)) return false;
     if (seenIds.has(a.accessory_id)) return false; // 配件 ID 不得重複
     seenIds.add(a.accessory_id);
     if (a.equipped && !a.owned) return false; // 穿戴中的一定要是已擁有，不可能穿沒買過的配件
@@ -3988,6 +3995,28 @@ function petAccessoryStageLockedMessage_(res, action) {
     : '🔒 這件配件要等貓咪長大到' + stageLabel + '才能穿戴；目前穿戴的配件沒有改變。';
 }
 
+function petAccessoryStageUnlockExp_(requiredStage) {
+  return ({ 1: 0, 2: 1200, 3: 3600 })[requiredStage];
+}
+
+function petAccessoryExpText_(exp) {
+  return String(exp).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function petAccessoryUnlockPresentation_(accessory, growth) {
+  if (!accessory || !growth || !Number.isInteger(accessory.required_stage) ||
+      typeof accessory.unlocked !== 'boolean' || !Number.isInteger(growth.exp_points)) return null;
+  const unlockExp = petAccessoryStageUnlockExp_(accessory.required_stage);
+  if (!Number.isInteger(unlockExp)) return null;
+  const remainingExp = Math.max(0, unlockExp - growth.exp_points);
+  return {
+    locked: !accessory.unlocked,
+    stage_label: petAccessoryStageLabel_(accessory.required_stage),
+    unlock_exp: unlockExp,
+    remaining_exp: remainingExp
+  };
+}
+
 // ══════════════════════════════════════════════
 // Gate E：穿戴／更換已擁有的配件（equipPetAccessory）。
 // 冪等鍵（clientRequestId）持久化到 localStorage 的做法，跟既有 initializePet／
@@ -4120,6 +4149,12 @@ async function resumePetEquip_(childId) {
 async function equipPetAccessoryClick_(accessoryId) {
   const childId = currentChild;
   if (!petShopLastResult_ || petShopTxBusy_ || petShopLastResult_.blocked) return;
+  const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
+  if (!entry || !entry.owned || entry.equipped) return; // 未擁有或已穿戴：按鈕本來就不該可點，這裡再擋一次
+  if (!entry.unlocked) {
+    setPetShopStatus_(petAccessoryStageLockedMessage_(entry, 'equip'));
+    return;
+  }
   if (hasPetFoodProtection_(childId)) {
     setPetShopStatus_('⚠️ 有一筆食物交易待確認，完成後才能穿戴配件。');
     return;
@@ -4128,8 +4163,6 @@ async function equipPetAccessoryClick_(accessoryId) {
     setPetShopStatus_('⚠️ 有一筆照顧請求待確認，完成後才能穿戴配件。');
     return;
   }
-  const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
-  if (!entry || !entry.owned || entry.equipped) return; // 未擁有或已穿戴：按鈕本來就不該可點，這裡再擋一次
   const pending = getOrCreatePetEquipPending_(childId, accessoryId);
   if (!pending) { setPetShopStatus_('⚠️ 已有另一件配件的穿戴請求待確認，請先完成或重新整理。'); return; }
   await resumePetEquip_(childId);
@@ -4290,6 +4323,12 @@ async function resumePetBuy_(childId) {
 async function buyPetAccessoryClick_(accessoryId) {
   const childId = currentChild;
   if (!petShopLastResult_ || petShopTxBusy_ || petShopLastResult_.blocked) return;
+  const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
+  if (!entry || entry.owned) return; // 已擁有：按鈕本來就不該可點，這裡再擋一次
+  if (!entry.unlocked) {
+    setPetShopStatus_(petAccessoryStageLockedMessage_(entry, 'buy'));
+    return;
+  }
   if (hasPetFoodProtection_(childId)) {
     setPetShopStatus_('⚠️ 有一筆食物交易待確認，完成後才能購買配件。');
     return;
@@ -4298,8 +4337,6 @@ async function buyPetAccessoryClick_(accessoryId) {
     setPetShopStatus_('⚠️ 有一筆照顧請求待確認，完成後才能購買配件。');
     return;
   }
-  const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
-  if (!entry || entry.owned) return; // 已擁有：按鈕本來就不該可點，這裡再擋一次
   if (petShopLastResult_.balance < entry.price_coins) return; // 餘額不足：按鈕本來就不該可點，後端仍會權威驗證一次
   const pending = getOrCreatePetBuyPending_(childId, accessoryId);
   if (!pending) { setPetShopStatus_('⚠️ 已有另一件配件的購買請求待確認，請先完成或重新整理。'); return; }
@@ -4336,6 +4373,9 @@ function renderPetShopList_(result) {
   result.accessories.forEach(function (a) {
     const card = document.createElement('div');
     card.className = 'pet-shop-card';
+    const unlock = petAccessoryUnlockPresentation_(a, result.growth);
+    if (!unlock) return;
+    if (unlock.locked) card.classList.add('locked');
 
     const emoji = document.createElement('div');
     emoji.className = 'pet-shop-emoji';
@@ -4368,6 +4408,16 @@ function renderPetShopList_(result) {
     price.textContent = a.owned ? '已擁有' : ('價格 ' + a.price_coins + ' 代幣');
     body.appendChild(name);
     body.appendChild(price);
+    if (unlock.locked) {
+      const unlockStage = document.createElement('div');
+      unlockStage.className = 'pet-shop-unlock';
+      unlockStage.textContent = '🔒 ' + unlock.stage_label + '解鎖';
+      const unlockExp = document.createElement('div');
+      unlockExp.className = 'pet-shop-unlock-exp';
+      unlockExp.textContent = '還差 ' + petAccessoryExpText_(unlock.remaining_exp) + ' EXP';
+      body.appendChild(unlockStage);
+      body.appendChild(unlockExp);
+    }
 
     // Gate B+E：已擁有、未穿戴的配件掛 onclick 送出 equipPetAccessory；
     // 未擁有但買得起的配件掛 onclick 送出 buyPetAccessory；
@@ -4377,7 +4427,11 @@ function renderPetShopList_(result) {
     const foodTxBlocked = hasPetFoodProtection_(currentChild);
     const careTxBlocked = hasPetCareProtection_(currentChild);
     const isThisTxTarget = petShopTxBusy_ && petShopTxTargetId_ === a.accessory_id;
-    if (a.owned && a.equipped) {
+    if (unlock.locked) {
+      btn.className = 'pet-shop-action-btn locked';
+      btn.disabled = true;
+      btn.textContent = '🔒 尚未解鎖';
+    } else if (a.owned && a.equipped) {
       btn.className = 'pet-shop-action-btn equipped';
       btn.disabled = true;
       btn.textContent = '已穿戴';
