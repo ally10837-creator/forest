@@ -3976,6 +3976,18 @@ function setPetShopStatus_(text) {
   if (el) el.textContent = text;
 }
 
+function petAccessoryStageLabel_(stage) {
+  return ({ 1: '幼貓', 2: '少年貓', 3: '成貓' })[stage] || '指定階段';
+}
+
+function petAccessoryStageLockedMessage_(res, action) {
+  const requiredStage = res && Number.isInteger(res.required_stage) ? res.required_stage : null;
+  const stageLabel = petAccessoryStageLabel_(requiredStage);
+  return action === 'buy'
+    ? '🔒 這件配件要等貓咪長大到' + stageLabel + '才能購買；森林幣沒有被扣除。'
+    : '🔒 這件配件要等貓咪長大到' + stageLabel + '才能穿戴；目前穿戴的配件沒有改變。';
+}
+
 // ══════════════════════════════════════════════
 // Gate E：穿戴／更換已擁有的配件（equipPetAccessory）。
 // 冪等鍵（clientRequestId）持久化到 localStorage 的做法，跟既有 initializePet／
@@ -4079,6 +4091,12 @@ async function resumePetEquip_(childId) {
     return;
   }
   if (res.error === 'invalid_token') { handlePetEquipAuthError_(childId, res); return; }
+  if (res.error === 'accessory_stage_locked') {
+    clearPetEquipPending_(childId);
+    setPetShopStatus_(petAccessoryStageLockedMessage_(res, 'equip'));
+    renderPetShopList_(petShopLastResult_);
+    return;
+  }
   if (res.error === 'accessory_not_owned' || res.error === 'unknown_accessory_id') {
     clearPetEquipPending_(childId);
     await refreshPetShop_();
@@ -4237,6 +4255,12 @@ async function resumePetBuy_(childId) {
     return;
   }
   if (res.error === 'invalid_token') { handlePetBuyAuthError_(childId, res); return; }
+  if (res.error === 'accessory_stage_locked') {
+    clearPetBuyPending_(childId);
+    setPetShopStatus_(petAccessoryStageLockedMessage_(res, 'buy'));
+    renderPetShopList_(petShopLastResult_);
+    return;
+  }
   if (res.error === 'already_owned' || res.error === 'unknown_accessory_id') {
     clearPetBuyPending_(childId); // 終局失敗，換新 ID，不然同一 ID 永遠重播同一個結果
     await refreshPetShop_();
