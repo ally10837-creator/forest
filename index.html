@@ -3853,9 +3853,17 @@ async function refreshPetAccessoryEquipState_(childId, options = {}) {
   if (currentChild !== childId || readSeq !== petEconomyReadSeq_) return; // 舊孩子／舊請求不得覆蓋新狀態
   if (!res.ok || !validatePetEconomyResult_(res.result)) { resetPetAccessoryEquipState_(); return; }
   petShopLastResult_ = res.result;
+  // getPetEconomyData 已經通過完整格式驗證，而且上方也確認這仍是目前孩子的
+  // 最新回應。把同一份後端權威餘額同步到孩子頁頂端，避免森林夥伴商店已顯示
+  // 正確餘額、頁首卻仍因該孩子尚未載入其他分頁而停在「— 代幣」。
+  allData[childId] = Object.assign({}, allData[childId] || {}, { balance: res.result.balance });
+  updateBalanceDisplay();
   renderPetGrowthTruth_(res.result);
   applyPetAccessoryTruth_(childId, res.result.equipped_accessory_id || '');
   reconcilePetPendingWithTruth_(childId, res.result);
+  // renderForestPet() 會先建立背包並顯示載入提示；economy 非同步回來後必須
+  // 主動重畫食物區塊，否則資料雖然已成功讀到，畫面仍會一直停在「正在讀取」。
+  if (currentSubTab === 'forestpet') renderPetFood();
 }
 
 async function refreshPetEconomyAfterMutation_(childId) {
@@ -4982,6 +4990,9 @@ function openPetZoom() {
   stopPetPortraitBlink();
   schedulePetPortraitBlink();
   setPetPortraitImage(CAT_PORTRAIT_NEUTRAL); // 一開啟就套用目前穿戴的配件，不用等使用者先摸一次
+  // 使用已通過驗證的 economy 快取立即畫背包；若資料仍在飛行中，先維持載入
+  // 提示，等 refreshPetAccessoryEquipState_ 完成後再由該函式重畫。
+  renderPetFood();
 }
 
 function closePetZoom() {
