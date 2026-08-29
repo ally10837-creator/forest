@@ -4082,19 +4082,69 @@ function getOrCreateTreeOpenPending_(childId, fruitId) {
 }
 function clearTreeOpenPending_(childId) { localStorage.removeItem(treeOpenPendingKey_(childId)); }
 
+// open_fruit schema v4 只接受正式 10 件配件的公開欄位；後端仍是權威來源，
+// 這份前端表只用來 fail closed，避免遭竄改或未知配件的加成被顯示為已確認。
+const TREE_ACCESSORY_BONUS_PUBLIC_CATALOG_ = Object.freeze({
+  leaf_clip: Object.freeze({ name: '葉子髮夾', emoji: '🍃', chance: 20, coins: 1 }),
+  acorn_bell: Object.freeze({ name: '橡果鈴鐺', emoji: '🌰', chance: 20, coins: 2 }),
+  daisy_collar: Object.freeze({ name: '小花項圈', emoji: '🌼', chance: 25, coins: 2 }),
+  berry_bandana: Object.freeze({ name: '藍莓領巾', emoji: '🫐', chance: 25, coins: 3 }),
+  star_bow: Object.freeze({ name: '星星蝴蝶結', emoji: '⭐', chance: 30, coins: 4 }),
+  moon_charm: Object.freeze({ name: '月亮吊飾', emoji: '🌙', chance: 30, coins: 5 }),
+  forest_hat: Object.freeze({ name: '森林小帽', emoji: '🎩', chance: 35, coins: 6 }),
+  magic_scarf: Object.freeze({ name: '魔法圍巾', emoji: '🧣', chance: 35, coins: 8 }),
+  fairy_crown: Object.freeze({ name: '精靈皇冠', emoji: '👑', chance: 40, coins: 10 }),
+  rainbow_wings: Object.freeze({ name: '彩虹翅膀', emoji: '🌈', chance: 40, coins: 12 })
+});
+const TREE_ACCESSORY_BONUS_PUBLIC_KEYS_ = Object.freeze([
+  'accessory_id', 'accessory_name', 'awarded_coins', 'bonus_coins',
+  'chance_percent', 'display_emoji', 'eligible', 'won'
+]);
+function hasExactTreeAccessoryBonusKeys_(bonus) {
+  return !!bonus && typeof bonus === 'object' && !Array.isArray(bonus) &&
+    Object.keys(bonus).sort().join('|') === TREE_ACCESSORY_BONUS_PUBLIC_KEYS_.slice().sort().join('|');
+}
+function normalizeTreeAccessoryBonus_(bonus, schemaVersion) {
+  if (!hasExactTreeAccessoryBonusKeys_(bonus) || typeof bonus.eligible !== 'boolean' ||
+      typeof bonus.won !== 'boolean' || !Number.isInteger(bonus.chance_percent) ||
+      !Number.isInteger(bonus.bonus_coins) || !Number.isInteger(bonus.awarded_coins)) return null;
+  const disabled = bonus.eligible === false && bonus.accessory_id === null &&
+    bonus.accessory_name === null && bonus.display_emoji === null && bonus.chance_percent === 0 &&
+    bonus.bonus_coins === 0 && bonus.won === false && bonus.awarded_coins === 0;
+  if (disabled) {
+    return { eligible: false, accessory_id: null, accessory_name: null, display_emoji: null,
+      chance_percent: 0, bonus_coins: 0, won: false, awarded_coins: 0 };
+  }
+  if (schemaVersion !== 4 || bonus.eligible !== true) return null;
+  const item = TREE_ACCESSORY_BONUS_PUBLIC_CATALOG_[bonus.accessory_id];
+  if (!item || bonus.accessory_name !== item.name || bonus.display_emoji !== item.emoji ||
+      bonus.chance_percent !== item.chance || bonus.bonus_coins !== item.coins ||
+      bonus.awarded_coins !== (bonus.won ? item.coins : 0)) return null;
+  return { eligible: true, accessory_id: bonus.accessory_id, accessory_name: item.name,
+    display_emoji: item.emoji, chance_percent: item.chance, bonus_coins: item.coins,
+    won: bonus.won, awarded_coins: bonus.awarded_coins };
+}
+
 function normalizeTreeOpenResponse_(res, pending) {
   if (!res || !res.ok || !res.result || typeof res.result !== 'object') return { ok: false };
   const r = res.result;
   if (r.fruit_id !== pending.fruitId || !/^cycle_[1-9][0-9]*$/.test(r.cycle_id || '') || r.fruit_tier !== 'general') return { ok: false };
-  if (r.schema_version !== 3 || !r.accessory_bonus || r.accessory_bonus.eligible !== false ||
-      r.accessory_bonus.won !== false || r.accessory_bonus.awarded_coins !== 0) return { ok: false };
+  if (r.schema_version !== 3 && r.schema_version !== 4) return { ok: false };
+  const bonus = normalizeTreeAccessoryBonus_(r.accessory_bonus, r.schema_version);
+  if (!bonus || (r.schema_version === 3 && bonus.eligible)) return { ok: false };
   if (r.reward_type === 'coin' && [3, 6, 9, 15, 30].includes(r.amount) && Number.isInteger(r.new_balance) && r.new_balance >= 0) {
-    return { ok: true, result: { fruit_id: r.fruit_id, reward_type: 'coin', amount: r.amount, new_balance: r.new_balance } };
+    return { ok: true, result: { fruit_id: r.fruit_id, reward_type: 'coin', amount: r.amount,
+      new_balance: r.new_balance, accessory_bonus: bonus } };
   }
   if (r.reward_type === 'tree_fruit' && (r.item_id === 'tree_sun_fruit' || r.item_id === 'tree_starlight_fruit') &&
       Number.isInteger(r.quantity_after) && r.quantity_after >= 1) {
+    const hasBalance = Object.prototype.hasOwnProperty.call(r, 'new_balance');
+    if (r.schema_version === 3 && hasBalance) return { ok: false };
+    if (r.schema_version === 4 && bonus.won && (!Number.isInteger(r.new_balance) || r.new_balance < 0)) return { ok: false };
+    if (r.schema_version === 4 && !bonus.won && hasBalance) return { ok: false };
     return { ok: true, result: { fruit_id: r.fruit_id, reward_type: 'tree_fruit',
-      item_id: r.item_id, quantity_after: r.quantity_after } };
+      item_id: r.item_id, quantity_after: r.quantity_after,
+      ...(bonus.won ? { new_balance: r.new_balance } : {}), accessory_bonus: bonus } };
   }
   return { ok: false };
 }
@@ -4174,18 +4224,26 @@ function treeRewardFruitMeta_(itemId) {
   if (itemId === 'tree_starlight_fruit') return { name: '星光果實', emoji: '🟣', exp: 20 };
   return null;
 }
+function treeAccessoryBonusResultCopy_(result) {
+  const bonus = result && result.accessory_bonus;
+  if (!bonus || bonus.eligible !== true || bonus.won !== true || bonus.awarded_coins <= 0) return '';
+  return '\n' + bonus.display_emoji + ' ' + bonus.accessory_name + '額外帶來 +' + bonus.awarded_coins + ' 代幣！';
+}
 function showTreeRewardResult_(result) {
   const icon = document.getElementById('tree-reward-icon');
   const title = document.getElementById('tree-reward-title');
   const copy = document.getElementById('tree-reward-copy');
   if (result.reward_type === 'coin') {
     icon.textContent = '🪙'; title.textContent = '得到 ' + result.amount + ' 代幣！';
-    copy.textContent = '後端已完成入帳。\n最新代幣餘額：' + result.new_balance;
+    copy.textContent = '後端已完成入帳。' + treeAccessoryBonusResultCopy_(result) +
+      '\n最新代幣餘額：' + result.new_balance;
   } else {
     const meta = treeRewardFruitMeta_(result.item_id);
     icon.textContent = meta.emoji; title.textContent = '得到' + meta.name + '！';
     copy.textContent = meta.name + '已放入神奇果實背包。\n食用可獲得 +' + meta.exp +
-      ' EXP；兩種神奇果實每天合計最多吃一顆。\n目前數量：' + result.quantity_after;
+      ' EXP；兩種神奇果實每天合計最多吃一顆。' + treeAccessoryBonusResultCopy_(result) +
+      (result.accessory_bonus && result.accessory_bonus.won ? '\n最新代幣餘額：' + result.new_balance : '') +
+      '\n目前數量：' + result.quantity_after;
   }
   document.getElementById('tree-reward-overlay').classList.add('show');
 }
@@ -4326,7 +4384,7 @@ function renderForestPet(data) {
   }
   capturePetZoomBeforeRender_();
   stopPetRoom();
-  el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><div class="pet-room-walk-pair frame-a"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-a" id="pet-room-walk-acc-a" alt=""></div><div class="pet-room-walk-pair frame-b"><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-b" id="pet-room-walk-acc-b" alt=""></div></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-a" id="pet-room-idle-acc-a" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-b" id="pet-room-idle-acc-b" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-room-static-acc" alt=""></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div><button class="pet-shop-btn" onclick="event.stopPropagation(); openPetShop()">🛒 配件商店</button><div class="pet-shop-modal" id="pet-shop-modal"><div class="pet-shop-panel"><button class="pet-shop-close" onclick="closePetShop()">✕</button><div class="pet-shop-title">🛒 配件商店</div><div class="pet-context-tip" role="note">長大後可以購買更多配件，替森林夥伴換上喜歡的造型。</div><div class="pet-shop-balance" id="pet-shop-balance"></div><div class="pet-shop-status" id="pet-shop-status"></div><div class="pet-shop-list" id="pet-shop-list"></div></div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><div class="pet-portrait-wrap" id="pet-portrait-wrap"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-portrait-acc" alt=""></div></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-context-tip" role="note">每天摸摸、洗澡和餵食，可以得到成長 EXP。</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
+  el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><div class="pet-room-walk-pair frame-a"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-a" id="pet-room-walk-acc-a" alt=""></div><div class="pet-room-walk-pair frame-b"><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-b" id="pet-room-walk-acc-b" alt=""></div></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-a" id="pet-room-idle-acc-a" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-b" id="pet-room-idle-acc-b" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-room-static-acc" alt=""></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div><button class="pet-shop-btn" onclick="event.stopPropagation(); openPetShop()">🛒 配件商店</button><div class="pet-shop-modal" id="pet-shop-modal"><div class="pet-shop-panel"><button class="pet-shop-close" onclick="closePetShop()">✕</button><div class="pet-shop-title">🛒 配件商店</div><div class="pet-context-tip" role="note">長大後可以購買更多配件；穿著配件開驚喜果實，還可能多得到代幣。</div><div class="pet-shop-balance" id="pet-shop-balance"></div><div class="pet-shop-status" id="pet-shop-status"></div><div class="pet-shop-list" id="pet-shop-list"></div></div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><div class="pet-portrait-wrap" id="pet-portrait-wrap"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-portrait-acc" alt=""></div></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-context-tip" role="note">每天摸摸、洗澡和餵食，可以得到成長 EXP。</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
   const petHintEl = document.getElementById('pet-hint');
   if (petHintEl) {
     petHintEl.insertAdjacentHTML('afterend', `<div class="pet-growth-card" id="pet-growth-card"><div class="pet-growth-title"><span id="pet-growth-stage-label">成長狀態載入中…</span><span id="pet-growth-exp"></span></div><div class="pet-exp-bar" aria-label="寵物成長進度"><div class="pet-exp-fill" id="pet-growth-fill"></div></div><div class="pet-context-tip" role="note">累積 EXP，森林夥伴會從幼貓成長成少年貓、成貓。</div><div class="pet-growth-detail" id="pet-growth-detail">正在讀取後端 EXP</div><div class="pet-care-status" id="pet-care-status"></div></div>`);
