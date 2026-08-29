@@ -2114,6 +2114,40 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
   finally { if (_childSectionInFlight_.get(key) === task) _childSectionInFlight_.delete(key); }
 }
 
+// 首頁標題列同時顯示兩個孩子的代幣，但 P1.3 之後只會載入目前孩子的分頁資料。
+// 用既有的輕量分頁 API 補讀另一位孩子，且只採用通過驗證的 balance；不把另一位
+// 孩子的菜單／家事／訂單資料合併進 allData，避免恢復舊版雙孩子完整載入。
+async function loadHeaderBalanceOnly_(childId) {
+  if (!MEMBERS[childId]) return false;
+  const cached = readChildSectionCache_(childId, 'menu');
+  const cachedBalance = Number(cached?.data?.balance);
+  if (Number.isSafeInteger(cachedBalance) && cachedBalance >= 0) {
+    allData[childId] = Object.assign({}, allData[childId] || {}, { balance: cachedBalance });
+    updateBalanceDisplay();
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CHILD_SECTION_TIMEOUT_MS);
+  try {
+    const url = API + '?action=getChildSection&childId=' + encodeURIComponent(childId) +
+      '&section=menu';
+    const response = await fetch(url, { signal: controller.signal });
+    const result = await response.json();
+    const balance = Number(result?.data?.balance);
+    if (!result || result.success !== true || result.childId !== childId ||
+        result.section !== 'menu' || !Number.isSafeInteger(balance) || balance < 0) {
+      return false;
+    }
+    allData[childId] = Object.assign({}, allData[childId] || {}, { balance });
+    updateBalanceDisplay();
+    return true;
+  } catch (error) {
+    return false; // 標題列補讀失敗不干擾目前孩子的主要內容；仍可點該孩子重新載入。
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // 目前孩子的購物車（shorthand）
 function getCart() { return carts[currentChild]; }
 function setCart(val) { carts[currentChild] = val; }
@@ -9379,7 +9413,10 @@ document.getElementById('wcd-bunny').innerHTML    = bunnyIMG(92);
 document.getElementById('wcd-bear').innerHTML     = bearChefIMG(88);
 document.getElementById('wcd-hamster').innerHTML  = hamsterIMG(88);
 document.getElementById('bank-tab-icon').src = IMG_HEDGEHOG;
-void loadChildSection_('menu', currentChild, { reason: 'page-load' });
+void loadChildSection_('menu', currentChild, { reason: 'page-load' }).finally(() => {
+  const siblingId = currentChild === 'candice' ? 'harris' : 'candice';
+  void loadHeaderBalanceOnly_(siblingId);
+});
 
 // 顯示歡迎頁
 (function() {
