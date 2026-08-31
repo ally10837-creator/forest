@@ -468,6 +468,20 @@ body {
 @keyframes treeFruitFall { to { transform: translate(58px, 130px) rotate(190deg); } }
 .tree-particle { position:absolute; z-index:9; left:50%; top:72%; pointer-events:none; animation:treeParticle .55s ease-out forwards; }
 @keyframes treeParticle { to { transform:translate(var(--tx),var(--ty)) rotate(120deg); opacity:0; } }
+.tree-progress {
+  margin: 10px 0; padding: 10px 12px; border: 1.5px solid #efd5ad; border-radius: 12px;
+  background: rgba(255,255,255,.72); text-align: center; color: var(--cocoa);
+}
+.tree-progress-title { font-size: 14px; font-weight: 800; line-height: 1.45; }
+.tree-progress-days { display: flex; justify-content: center; gap: 10px; margin: 8px 0 6px; }
+.tree-progress-day {
+  display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  border: 2px solid #d7c6b4; border-radius: 50%; background: #fff; color: #9b8c80;
+  font-size: 13px; font-weight: 800;
+}
+.tree-progress-day.active { border-color: #68ae5d; background: #dbf5d6; color: #326c2e; }
+.tree-progress-day.complete { border-color: #f2a628; background: #fff0b8; color: #8b5600; }
+.tree-progress-copy { color: var(--cocoa-soft); font-size: 12px; line-height: 1.5; }
 .tree-status { min-height: 42px; text-align: center; color: var(--cocoa-soft); font-size: 13px; line-height: 1.55; }
 .tree-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
 .tree-action-btn {
@@ -2796,7 +2810,7 @@ async function submitPetSetupName() {
 }
 
 function createInitialTreeState_() {
-  return { status: 'idle', pendingFruits: [], unsupported: false, message: '', requestSeq: 0, inFlight: null };
+  return { status: 'idle', pendingFruits: [], progress: null, unsupported: false, message: '', requestSeq: 0, inFlight: null };
 }
 const _treeStates = { candice: createInitialTreeState_(), harris: createInitialTreeState_() };
 function getTreeState_(childId) { return _treeStates[childId] || (_treeStates[childId] = createInitialTreeState_()); }
@@ -3220,14 +3234,51 @@ function hasPetAccessoryProtection_(childId) {
   return !!busy || !!equipPending || !!buyPending;
 }
 
+const TREE_PROGRESS_PUBLIC_KEYS_ = [
+  'schema_version', 'current_day', 'required_days', 'required_chores_per_day',
+  'completed_today', 'last_valid_date_taipei'
+];
+function isCanonicalTreeDate_(value) {
+  if (typeof value !== 'string') return false;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}
+function normalizeTreeProgress_(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+      Object.keys(raw).sort().join('|') !== TREE_PROGRESS_PUBLIC_KEYS_.slice().sort().join('|') ||
+      raw.schema_version !== 1 || raw.required_days !== 3 || raw.required_chores_per_day !== 3 ||
+      !Number.isInteger(raw.current_day) || raw.current_day < 0 || raw.current_day > 3 ||
+      typeof raw.completed_today !== 'boolean' ||
+      (raw.last_valid_date_taipei !== '' && !isCanonicalTreeDate_(raw.last_valid_date_taipei)) ||
+      (raw.completed_today !== (raw.current_day === 3)) ||
+      (raw.current_day > 0 && raw.last_valid_date_taipei === '')) return null;
+  return {
+    schema_version: 1,
+    current_day: raw.current_day,
+    required_days: 3,
+    required_chores_per_day: 3,
+    completed_today: raw.completed_today,
+    last_valid_date_taipei: raw.last_valid_date_taipei
+  };
+}
 function normalizeTreeStatusResponse_(res) {
   if (!res || !res.ok || !Array.isArray(res.pending_fruits)) return { ok: false, error: 'invalid_response' };
+  // 相容前端先部署、後端後切換：@81 尚未提供 progress 時仍可安全顯示果實；
+  // 一旦欄位存在，就必須通過完整 exact-key 與交叉欄位驗證。
+  const hasProgress = Object.prototype.hasOwnProperty.call(res, 'progress');
+  const progress = hasProgress ? normalizeTreeProgress_(res.progress) : null;
+  if (hasProgress && !progress) return { ok: false, error: 'invalid_response' };
   const fruits = [];
   let unsupported = false;
   for (const raw of res.pending_fruits) {
     if (!raw || typeof raw !== 'object' || !/^fruit_[0-9a-f]{12}$/i.test(raw.fruit_id || '') ||
         !/^cycle_[1-9][0-9]*$/.test(raw.cycle_id || '') || typeof raw.fruit_tier !== 'string' ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(raw.milestone_date_taipei || '') || typeof raw.created_at !== 'string' || !raw.created_at) {
+        !isCanonicalTreeDate_(raw.milestone_date_taipei) || typeof raw.created_at !== 'string' || !raw.created_at) {
       return { ok: false, error: 'invalid_response' };
     }
     if (raw.fruit_tier !== 'general') { unsupported = true; continue; }
@@ -3235,7 +3286,7 @@ function normalizeTreeStatusResponse_(res) {
       milestone_date_taipei: raw.milestone_date_taipei, created_at: raw.created_at });
   }
   fruits.sort((a, b) => Number(a.cycle_id.slice(6)) - Number(b.cycle_id.slice(6)));
-  return { ok: true, fruits, unsupported };
+  return { ok: true, fruits, progress, unsupported };
 }
 
 function renderCurrentForestPet_() {
@@ -3254,7 +3305,7 @@ async function refreshTreeStatus_(childId, options = {}) {
     if (res.ok) {
       const normalized = normalizeTreeStatusResponse_(res);
       if (!normalized.ok) { state.status = 'blocked'; state.message = '樹的資料格式無法確認，請聯絡管理員。'; }
-      else { state.status = 'ready'; state.pendingFruits = normalized.fruits; state.unsupported = normalized.unsupported; state.message = ''; }
+      else { state.status = 'ready'; state.pendingFruits = normalized.fruits; state.progress = normalized.progress; state.unsupported = normalized.unsupported; state.message = ''; }
     } else if (res.error === 'transaction_blocked') {
       state.status = 'blocked';
       state.message = getTreeOpenPending_(childId)
@@ -4368,7 +4419,28 @@ function renderTreeSection_(childId, cachedOnly) {
     const color = treeFruitColorVariant_(f.fruit_id);
     return `<button class="tree-fruit tree-fruit-${color}" style="left:${slot.left}px;top:${slot.top}px" aria-label="打開成熟果實" ${disabled ? 'disabled' : ''} onclick="openTreeFruit_('${f.fruit_id}')"></button>`;
   }).join('');
-  return `<div class="tree-card" id="tree-card"><div class="tree-title">🌳 驚喜樹</div><div class="tree-scene" id="tree-scene"><img class="tree-scene-img" src="img/pet/tree_scene.png" alt=""><div class="tree-fruit-layer">${fruitHtml}</div></div><div class="pet-context-tip" role="note">每天至少完成3件家事，驚喜樹才會長大一天；連續3天就會長出一顆果實。</div><div class="tree-status">${status}</div><div class="tree-actions">${actions}</div></div>`;
+  const progressHtml = state.status === 'ready' ? renderTreeProgress_(state.progress) : '';
+  return `<div class="tree-card" id="tree-card"><div class="tree-title">🌳 驚喜樹</div><div class="tree-scene" id="tree-scene"><img class="tree-scene-img" src="img/pet/tree_scene.png" alt=""><div class="tree-fruit-layer">${fruitHtml}</div></div><div class="pet-context-tip" role="note">每天至少完成3件家事，驚喜樹才會長大一天；連續3天就會長出一顆果實。</div>${progressHtml}<div class="tree-status">${status}</div><div class="tree-actions">${actions}</div></div>`;
+}
+
+function renderTreeProgress_(progress) {
+  if (!progress) return '';
+  const day = progress.current_day;
+  const title = progress.completed_today
+    ? '第 3 天完成！驚喜果實已長出'
+    : day === 0 ? '本輪進度：尚未開始' : `本輪進度：第 ${day} 天／共 3 天`;
+  const remaining = Math.max(0, 3 - day);
+  const copy = progress.completed_today
+    ? '下一個有效日會從新一輪第 1 天開始。'
+    : day === 0
+      ? '完成並核准至少 3 件不同家事，就能累積第 1 天。'
+      : `再連續完成 ${remaining} 個有效日，就會長出果實。`;
+  const dots = [1, 2, 3].map(value => {
+    const active = value <= day ? ' active' : '';
+    const complete = progress.completed_today && value === 3 ? ' complete' : '';
+    return `<span class="tree-progress-day${active}${complete}" aria-hidden="true">${value}</span>`;
+  }).join('');
+  return `<div class="tree-progress" role="status" aria-label="${title}"><div class="tree-progress-title">${title}</div><div class="tree-progress-days">${dots}</div><div class="tree-progress-copy">${copy}</div></div>`;
 }
 
 // 純視覺隨機：同一顆果實（同一個 fruit_id）每次重新渲染都固定同一個顏色，不會閃爍；
