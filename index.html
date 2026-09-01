@@ -2596,6 +2596,14 @@ function petStatusFailureMessage_(error, hasCachedPet) {
 async function refreshPetStatusOnly_(childId, options = {}) {
   const reason = options.reason || 'unspecified';
   const cancelPrevious = options.cancelPrevious === true;
+  // silent（每 30 秒背景 tick）：資料抓取照舊，但 pet 與樹的顯示資料都沒變就不重畫；
+  //   若確實變了，仍尊重驚喜樹的安全狀態（不安全時只 defer，不破壞開果實操作）。
+  const silent = options.silent === true;
+  const _renderPet = () => {
+    if (currentChild !== childId || currentSubTab !== 'forestpet') return;
+    if (silent) renderForestPetIfChanged_(childId);
+    else renderForestPet(allData[childId] || {});
+  };
   const existing = _petStatusRequests_[childId];
   if (existing && !cancelPrevious) return existing.promise;
   if (existing) existing.controller.abort();
@@ -2611,8 +2619,12 @@ async function refreshPetStatusOnly_(childId, options = {}) {
     controller.abort();
   }, PET_STATUS_TIMEOUT_MS);
   const hasCachedPet = !!readServerPetCache_(childId);
-  setPetStatusUi_(childId, 'loading',
-    hasCachedPet ? '正在更新寵物狀態……（先顯示上次資料）' : '正在確認寵物狀態……');
+  // 背景 silent 刷新不得把目前可操作畫面改成 loading；否則成功回應在資料未變時
+  // 會因 signature 相同而不重畫，loading 文字就會永久留在畫面。非 silent 維持原行為。
+  if (!silent) {
+    setPetStatusUi_(childId, 'loading',
+      hasCachedPet ? '正在更新寵物狀態……（先顯示上次資料）' : '正在確認寵物狀態……');
+  }
 
   const promise = (async () => {
     try {
@@ -2627,7 +2639,7 @@ async function refreshPetStatusOnly_(childId, options = {}) {
       const classified = classifyServerPet_(data);
       if (classified.kind !== 'present' && classified.kind !== 'absent') {
         setPetStatusUi_(childId, 'error', petStatusFailureMessage_('invalid_data', hasCachedPet));
-        if (currentChild === childId && currentSubTab === 'forestpet') renderForestPet(allData[childId] || {});
+        _renderPet();
         return { ok: false, error: 'invalid_data', kind: classified.kind };
       }
       allData[childId] = {
@@ -2637,14 +2649,14 @@ async function refreshPetStatusOnly_(childId, options = {}) {
       };
       syncServerPetCache_(childId, classified);
       setPetStatusUi_(childId, 'ready', '');
-      if (currentChild === childId && currentSubTab === 'forestpet') renderForestPet(allData[childId]);
+      _renderPet();
       return { ok: true, kind: classified.kind, pet: classified.pet || null };
     } catch (e) {
       const active = _petStatusRequests_[childId];
       if (!active || active.requestId !== requestId) return { ok: false, error: 'stale' };
       const error = controller.signal.aborted ? (timedOut ? 'timeout' : 'aborted') : 'network_error';
       setPetStatusUi_(childId, 'error', petStatusFailureMessage_(error, hasCachedPet));
-      if (currentChild === childId && currentSubTab === 'forestpet') renderForestPet(allData[childId] || {});
+      _renderPet();
       return { ok: false, error };
     } finally {
       clearTimeout(timeoutId);
@@ -2810,12 +2822,96 @@ async function submitPetSetupName() {
 }
 
 function createInitialTreeState_() {
-  return { status: 'idle', pendingFruits: [], progress: null, unsupported: false, message: '', requestSeq: 0, inFlight: null };
+  // renderedSig / petRenderedSig：上一次已實際畫上森林夥伴頁的「顯示相關」資料指紋，
+  //   用來讓背景（silent）刷新在資料沒變時完全不重建 DOM。
+  // deferredRender：資料變了但當下處於不安全狀態（開果實中／有本機 pending／獎勵動畫中／
+  //   結果視窗開／正在操作果實），先只更新資料模型，等安全點再 flush 一次。
+  return { status: 'idle', pendingFruits: [], progress: null, unsupported: false, message: '', requestSeq: 0, inFlight: null,
+    renderedSig: null, petRenderedSig: null, deferredRender: false };
 }
 const _treeStates = { candice: createInitialTreeState_(), harris: createInitialTreeState_() };
 function getTreeState_(childId) { return _treeStates[childId] || (_treeStates[childId] = createInitialTreeState_()); }
 function invalidateTreeRequest_(childId) {
-  const state = getTreeState_(childId); state.requestSeq += 1; state.inFlight = null; cleanupTreeRewardAnimation_();
+  const state = getTreeState_(childId); state.requestSeq += 1; state.inFlight = null;
+  state.deferredRender = false; cleanupTreeRewardAnimation_();
+}
+
+// ── 驚喜樹刷新穩定性（2026-09-01，純前端）─────────────────────────────
+// 目標：保留每 30 秒必要的餘額／寵物狀態／驚喜樹資料抓取，但背景刷新只更新資料模型，
+// 只有在「顯示相關資料實際改變」且「當下安全」時才重畫一次；果實存在而資料沒變時，
+// 背景刷新不得讓果實消失、發光動畫重啟或按鈕失焦。既有 inFlight 單飛、requestSeq
+// 過期回應丟棄、切孩子取消，以及所有 P2B／P2C／配件加成／schema v4 行為完全不變。
+function treeRenderSignature_(state) {
+  return JSON.stringify({
+    status: state.status,
+    message: state.message,
+    fruits: (state.pendingFruits || []).map(function (f) { return f.fruit_id; }).sort(),
+    progress: state.progress || null,
+    unsupported: !!state.unsupported
+  });
+}
+function petRenderSignature_(childId) {
+  const d = allData[childId] || {};
+  const pet = d.pet || (d.pet_status && d.pet_status.pet) || null;
+  return JSON.stringify({
+    kind: classifyServerPet_(d).kind,
+    stage: pet ? pet.stage : null,
+    exp: pet ? pet.exp_points : null,
+    name: pet ? pet.pet_name : null,
+    setupMsg: (_petStatusUi_[childId] && _petStatusUi_[childId].message) || ''
+  });
+}
+function isTreeRenderSafe_(childId) {
+  if (currentChild !== childId || currentSubTab !== 'forestpet') return false;
+  const state = getTreeState_(childId);
+  if (state.status === 'opening') return false;               // 開果實／恢復請求進行中
+  if (getTreeOpenPending_(childId)) return false;             // 本機有未決 open_fruit 請求
+  if (_treeAnimationTimers.length > 0) return false;          // 獎勵動畫進行中
+  const overlay = document.getElementById('tree-reward-overlay');
+  if (overlay && overlay.classList.contains('show')) return false; // 結果視窗開啟
+  const active = document.activeElement;                      // 使用者正在操作果實／樹按鈕
+  if (active && typeof active.closest === 'function' && active.closest('.tree-fruit, .tree-action-btn')) return false;
+  return true;
+}
+// 背景/靜默刷新後呼叫：只有樹的顯示資料真的變、且安全，才重畫一次；否則設 deferredRender。
+function renderTreeIfSafe_(childId) {
+  const state = getTreeState_(childId);
+  // deferredRender 同時承載 tree 與 pet 的延後渲染；樹資料未變時，只有 pet 也已同步
+  // 才能清除。若 pet 仍有變更，必須保留 deferred（不安全）或安全地畫一次。
+  if (treeRenderSignature_(state) === state.renderedSig) {
+    if (petRenderSignature_(childId) === state.petRenderedSig) { state.deferredRender = false; return; }
+    if (!isTreeRenderSafe_(childId)) { state.deferredRender = true; return; }
+    renderCurrentForestPet_();
+    return;
+  }
+  if (!isTreeRenderSafe_(childId)) { state.deferredRender = true; return; }
+  renderCurrentForestPet_(); // renderForestPet 收尾會同步 renderedSig/petRenderedSig 並清 deferredRender
+}
+// 背景 pet-status 靜默刷新後呼叫：pet 或樹的顯示資料都沒變就完全不重畫。
+function renderForestPetIfChanged_(childId) {
+  const state = getTreeState_(childId);
+  if (petRenderSignature_(childId) === state.petRenderedSig &&
+      treeRenderSignature_(state) === state.renderedSig) { return; }
+  if (!isTreeRenderSafe_(childId)) { state.deferredRender = true; return; }
+  renderCurrentForestPet_();
+}
+// 安全點（開果實流程結束、動畫清理、關閉獎勵視窗、重新進頁、切孩子）呼叫：至多 flush 一次。
+function flushDeferredTreeRender_(childId) {
+  const cid = childId || currentChild;
+  const state = getTreeState_(cid);
+  if (!state.deferredRender) return;
+  if (treeRenderSignature_(state) === state.renderedSig &&
+      petRenderSignature_(cid) === state.petRenderedSig) { state.deferredRender = false; return; }
+  if (!isTreeRenderSafe_(cid)) return; // 仍不安全，保留 deferred，等下一個安全點
+  renderCurrentForestPet_();
+}
+// renderForestPet 每條路徑收尾都呼叫：把「已實際畫上」的指紋同步回 state，
+// 讓上面的 IfSafe / IfChanged / flush 判斷準確，不會為已畫的狀態再排一次重建。
+function _syncForestPetRenderSig_(childId, treeShown) {
+  const s = getTreeState_(childId);
+  s.petRenderedSig = petRenderSignature_(childId);
+  s.renderedSig = treeShown ? treeRenderSignature_(s) : null;
+  s.deferredRender = false;
 }
 
 // ══════════════════════════════════════════════
@@ -3297,8 +3393,12 @@ async function refreshTreeStatus_(childId, options = {}) {
   const state = getTreeState_(childId);
   if (state.inFlight) return state.inFlight;
   if (classifyServerPet_(allData[childId]).kind !== 'present') return false;
+  // silent（背景／每 30 秒 tick／開果實後續等）：不先切 loading、不先重畫；
+  //   資料回來後只走 renderTreeIfSafe_（資料變且安全才畫一次）。
+  // 非 silent（進頁／切孩子／手動更新／樹上「更新」「重新確認」按鈕）：維持顯示 loading。
+  const silent = options.silent === true;
   const seq = ++state.requestSeq;
-  state.status = 'loading'; state.message = ''; renderCurrentForestPet_();
+  if (!silent) { state.status = 'loading'; state.message = ''; renderCurrentForestPet_(); }
   state.inFlight = (async () => {
     const res = await callPhase2A('getTreeStatus', { childId });
     if (seq !== state.requestSeq) return false;
@@ -3317,17 +3417,20 @@ async function refreshTreeStatus_(childId, options = {}) {
         ? '驚喜樹尚未完成後端設定，請聯絡管理員。'
         : '驚喜樹資料需要人工核對，請聯絡管理員。';
     } else { state.status = 'error'; state.message = '暫時無法讀取驚喜樹，請稍後再試。'; }
-    renderCurrentForestPet_();
+    if (silent) renderTreeIfSafe_(childId);
+    else renderCurrentForestPet_();
     return state.status === 'ready';
   })();
   try { return await state.inFlight; }
   finally { if (seq === state.requestSeq) state.inFlight = null; }
 }
 
-function onEnterForestPet_() {
+function onEnterForestPet_(opts) {
   const childId = currentChild;
+  const silent = !!(opts && opts.silent);
+  if (!silent) flushDeferredTreeRender_(childId); // 重新進頁：先把先前 defer 的一次畫掉
   if (classifyServerPet_(allData[childId]).kind === 'present') {
-    void refreshTreeStatus_(childId, { reason: 'enter-forest-pet' });
+    void refreshTreeStatus_(childId, { reason: 'enter-forest-pet', silent: silent });
   }
   void refreshPetAccessoryEquipState_(childId);
 }
@@ -4286,13 +4389,14 @@ async function resumePendingTreeOpen_(childId) {
     clearTreeOpenPending_(childId);
     if (currentChild === childId && currentSubTab === 'forestpet') showTreeRewardResult_(normalized.result);
     const loaded = await loadAll('tree-open-success');
-    await refreshTreeStatus_(childId, { reason: 'tree-open-success' });
+    // silent：結果視窗此刻正開著（不安全）→ 只更新資料模型，等 closeTreeRewardResult_ 安全點再畫。
+    await refreshTreeStatus_(childId, { reason: 'tree-open-success', silent: true });
     if (!loaded) showToast('⚠️ 獎勵已完成，但最新資料尚待更新', 'warn');
     return;
   }
   if (res.error === 'fruit_not_available') {
-    await refreshTreeStatus_(childId, { reason: 'fruit-not-available' });
-    clearTreeOpenPending_(childId);
+    clearTreeOpenPending_(childId); // 先清本機 pending，讓下面的 silent 刷新在安全狀態下能直接更新樹
+    await refreshTreeStatus_(childId, { reason: 'fruit-not-available', silent: true });
     if (currentChild === childId) showToast('這顆果實已經不能打開，樹的狀態已更新。', 'warn');
     return;
   }
@@ -4332,13 +4436,17 @@ function showTreeRewardResult_(result) {
   }
   document.getElementById('tree-reward-overlay').classList.add('show');
 }
-function closeTreeRewardResult_() { document.getElementById('tree-reward-overlay').classList.remove('show'); }
+function closeTreeRewardResult_() {
+  document.getElementById('tree-reward-overlay').classList.remove('show');
+  flushDeferredTreeRender_(); // 安全點：關閉獎勵視窗後把先前 defer 的一次畫掉
+}
 
 let _treeAnimationTimers = [];
 function cleanupTreeRewardAnimation_() {
   _treeAnimationTimers.forEach(clearTimeout); _treeAnimationTimers = [];
   document.querySelectorAll('.tree-animation-fruit,.tree-particle').forEach(el => el.remove());
   document.getElementById('tree-card')?.classList.remove('tree-shaking');
+  flushDeferredTreeRender_(); // 安全點：獎勵動畫清理後把先前 defer 的一次畫掉
 }
 function waitTreeStep_(ms) {
   const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -4473,19 +4581,23 @@ function renderForestPet(data) {
   if (classified.kind === 'absent') {
     if (getPetSetupPending(childId) || getPetSetupGuard_(childId)) {
       el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-portrait"><img src="img/pet/cat_box.png" alt="紙箱裡的小貓"></div><div class="pet-encounter-text tree-warning">上次領養仍待確認，請聯絡管理員核對後再繼續。</div></div>`;
+      _syncForestPetRenderSig_(childId, false);
       return;
     }
     el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-rain"><span style="left:12%">💧</span><span style="left:58%;animation-delay:.5s">💧</span></div><div class="pet-encounter-portrait"><img src="img/pet/cat_box.png" alt="紙箱裡一隻可憐的迷路小貓"></div><div class="pet-encounter-text">你在森林餐廳後院發現一隻迷路的小貓……<br>要帶牠回家嗎？</div><div class="pet-encounter-actions"><button class="pet-adopt-btn" onclick="openPetSetup()">💕 帶牠回家</button><button class="pet-decline-btn" onclick="declinePet()">先不要</button></div></div>`;
+    _syncForestPetRenderSig_(childId, false);
     return;
   }
   if (classified.kind === 'invalid') {
     el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-portrait"><img src="img/pet/cat_portrait.png" alt="貓咪"></div><div class="pet-encounter-text tree-warning">目前無法安全確認寵物資料，請聯絡管理員人工核對。</div></div>`;
+    _syncForestPetRenderSig_(childId, false);
     return;
   }
   const pet = classified.kind === 'present' ? classified.pet : cached;
   if (!pet) {
     const statusMessage = _petStatusUi_[childId]?.message || '正在確認後端寵物狀態……';
     el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-text">${statusMessage}<br>尚未確認前不會開始新的領養。</div></div>`;
+    _syncForestPetRenderSig_(childId, false);
     return;
   }
   capturePetZoomBeforeRender_();
@@ -4517,6 +4629,7 @@ function renderForestPet(data) {
   // 若原本正開著，必須恢復新 modal 與目前狀態，不能把使用者踢出去。
   restorePetShopAfterRender_();
   restorePetZoomAfterRender_();
+  _syncForestPetRenderSig_(childId, true);
 }
 
 // ══════════════════════════════════════════════
@@ -6030,7 +6143,11 @@ async function _loadAllFetchAndApply(signal) {
       // paint 時機，幾乎立即執行，又不佔用目前 _loadAllFetchAndApply() 這個 async function
       // 的呼叫堆疊（避免深層同步呼叫 renderSubTab 造成重入疑慮）。
       queueMicrotask(() => {
-        renderSubTab(currentSubTab);
+        // 森林夥伴頁：只有 pet/樹的顯示資料真的變且安全才重畫，避免 loadAll（含每 30 秒
+        // 背景刷新、家事核准後刷新）無條件重建 #forestpet-content 造成果實閃爍。
+        // renderSubTab('forestpet') 本身也只是呼叫 renderForestPet，改走安全版等價。
+        if (currentSubTab === 'forestpet') renderForestPetIfChanged_(currentChild);
+        else renderSubTab(currentSubTab);
         checkWeeklyReview(currentChild);
         checkInterestNotification();
       });
@@ -9507,8 +9624,9 @@ setInterval(async () => {
   if (childPageActive) {
     if (currentSubTab === 'forestpet') {
       const childId = currentChild;
-      const outcome = await refreshPetStatusOnly_(childId, { reason: 'background-refresh' });
-      if (outcome.ok && currentChild === childId && currentSubTab === 'forestpet') onEnterForestPet_();
+      // 背景 30 秒 tick 一律 silent：抓餘額/寵物/驚喜樹資料，但只有資料真的變且安全才重畫。
+      const outcome = await refreshPetStatusOnly_(childId, { reason: 'background-refresh', silent: true });
+      if (outcome.ok && currentChild === childId && currentSubTab === 'forestpet') onEnterForestPet_({ silent: true });
     } else {
       await loadChildSection_(currentSubTab, currentChild, {
         reason: 'background-refresh', force: true, silent: true
