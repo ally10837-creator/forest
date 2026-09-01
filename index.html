@@ -2826,7 +2826,8 @@ function createInitialTreeState_() {
   //   用來讓背景（silent）刷新在資料沒變時完全不重建 DOM。
   // deferredRender：資料變了但當下處於不安全狀態（開果實中／有本機 pending／獎勵動畫中／
   //   結果視窗開／正在操作果實），先只更新資料模型，等安全點再 flush 一次。
-  return { status: 'idle', pendingFruits: [], progress: null, unsupported: false, message: '', requestSeq: 0, inFlight: null,
+  return { status: 'idle', pendingFruits: [], progress: null, unsupported: false, message: '', recoveryAvailable: false,
+    requestSeq: 0, inFlight: null,
     renderedSig: null, petRenderedSig: null, deferredRender: false };
 }
 const _treeStates = { candice: createInitialTreeState_(), harris: createInitialTreeState_() };
@@ -2847,7 +2848,8 @@ function treeRenderSignature_(state) {
     message: state.message,
     fruits: (state.pendingFruits || []).map(function (f) { return f.fruit_id; }).sort(),
     progress: state.progress || null,
-    unsupported: !!state.unsupported
+    unsupported: !!state.unsupported,
+    recoveryAvailable: !!state.recoveryAvailable
   });
 }
 function petRenderSignature_(childId) {
@@ -3403,20 +3405,28 @@ async function refreshTreeStatus_(childId, options = {}) {
     const res = await callPhase2A('getTreeStatus', { childId });
     if (seq !== state.requestSeq) return false;
     if (res.ok) {
+      state.recoveryAvailable = false;
       const normalized = normalizeTreeStatusResponse_(res);
       if (!normalized.ok) { state.status = 'blocked'; state.message = '樹的資料格式無法確認，請聯絡管理員。'; }
-      else { state.status = 'ready'; state.pendingFruits = normalized.fruits; state.progress = normalized.progress; state.unsupported = normalized.unsupported; state.message = ''; }
+      else { state.status = 'ready'; state.pendingFruits = normalized.fruits; state.progress = normalized.progress; state.unsupported = normalized.unsupported; state.recoveryAvailable = false; state.message = ''; }
     } else if (res.error === 'transaction_blocked') {
       state.status = 'blocked';
+      const hasRecoveryField = Object.prototype.hasOwnProperty.call(res, 'recovery_available');
+      state.recoveryAvailable = hasRecoveryField && typeof res.recovery_available === 'boolean'
+        ? res.recovery_available : false;
       state.message = getTreeOpenPending_(childId)
         ? '有一筆果實交易待確認，請用原請求繼續。'
-        : '後端有一筆果實交易待確認，但這台裝置沒有可恢復的請求，請聯絡管理員。';
+        : state.recoveryAvailable
+          ? '後端找到一筆可安全續跑的果實交易，可以在這台裝置繼續完成。'
+          : hasRecoveryField && typeof res.recovery_available !== 'boolean'
+            ? '果實恢復狀態格式無法確認，請聯絡管理員。'
+            : '後端有一筆果實交易待確認，但目前無法自動恢復，請聯絡管理員。';
     }
     else if (res.error === 'error_unsynced' || res.error === 'configuration_error' || res.error === 'pet_not_ready') {
-      state.status = 'blocked'; state.message = res.error === 'configuration_error'
+      state.status = 'blocked'; state.recoveryAvailable = false; state.message = res.error === 'configuration_error'
         ? '驚喜樹尚未完成後端設定，請聯絡管理員。'
         : '驚喜樹資料需要人工核對，請聯絡管理員。';
-    } else { state.status = 'error'; state.message = '暫時無法讀取驚喜樹，請稍後再試。'; }
+    } else { state.status = 'error'; state.recoveryAvailable = false; state.message = '暫時無法讀取驚喜樹，請稍後再試。'; }
     if (silent) renderTreeIfSafe_(childId);
     else renderCurrentForestPet_();
     return state.status === 'ready';
@@ -4337,6 +4347,14 @@ function normalizeTreeOpenResponse_(res, pending) {
   return { ok: false };
 }
 
+// 跨裝置恢復成功回應不會公開原 clientRequestId；只從既有 schema v3/v4 成功結果
+// 取 fruit_id，建立最小的本機驗證上下文，再交給同一支嚴格 normalizer。
+function normalizeRecoveredTreeOpenResponse_(res) {
+  const fruitId = res && res.result && res.result.fruit_id;
+  if (typeof fruitId !== 'string' || !/^fruit_[0-9a-f]{12}$/i.test(fruitId)) return { ok: false };
+  return normalizeTreeOpenResponse_(res, { fruitId });
+}
+
 async function sendTreeOpenAttempt_(childId, pending) {
   const payload = { childId, clientRequestId: pending.clientRequestId, fruitId: pending.fruitId };
   return callPetMutationWithRecovery_('openTreeReward', payload, pending.fruitId);
@@ -4405,6 +4423,58 @@ async function resumePendingTreeOpen_(childId) {
   else if (res.error === 'configuration_error') { state.status = 'blocked'; state.message = '驚喜樹後端設定異常，請聯絡管理員。'; }
   else if (res.error === 'pet_not_ready') { await loadAll('tree-pet-not-ready'); state.status = 'blocked'; state.message = '後端尚未確認寵物，已保留原請求。'; }
   else { state.status = 'blocked'; state.message = '果實請求無法安全完成，已保留原請求。'; }
+  renderCurrentForestPet_();
+}
+
+// 換裝置／私密瀏覽後沒有 localStorage 原請求時使用。這條路徑不產生 crid、不寫
+// pending，也不呼叫 openTreeReward；後端只會在找到唯一且完整通過 gate 的既有交易時
+// 沿 frozen plan 續跑。快速重按由 state.status==='opening' 擋下。
+async function resumeServerTreeOpen_(childId) {
+  const state = getTreeState_(childId);
+  if (currentChild !== childId || currentSubTab !== 'forestpet' || state.status === 'opening' ||
+      !state.recoveryAvailable || getTreeOpenPending_(childId)) return;
+  if (hasPetFoodProtection_(childId)) {
+    state.status = 'blocked'; state.recoveryAvailable = false;
+    state.message = '同時發現食物與果實未決交易，請聯絡管理員核對。';
+    renderCurrentForestPet_(); return;
+  }
+  if (hasPetCareProtection_(childId)) {
+    state.status = 'blocked'; state.recoveryAvailable = false;
+    state.message = '同時發現照顧與果實未決請求，請先完成原照顧動作。';
+    renderCurrentForestPet_(); return;
+  }
+  if (typeof hasTreeFruitConsumeProtection_ === 'function' && hasTreeFruitConsumeProtection_(childId)) {
+    state.status = 'blocked'; state.recoveryAvailable = false;
+    state.message = '同時發現神奇果實食用與開果實未決請求，請先完成原請求。';
+    renderCurrentForestPet_(); return;
+  }
+  state.status = 'opening'; state.message = '正在安全續跑上次的果實交易，請不要重複點擊……';
+  renderCurrentForestPet_();
+  const res = await callPhase2A('resumeOpenFruitForChild', { childId });
+  if (res.ok) {
+    const normalized = normalizeRecoveredTreeOpenResponse_(res);
+    if (!normalized.ok) {
+      state.status = 'blocked'; state.recoveryAvailable = false;
+      state.message = '恢復結果格式無法確認，請聯絡管理員。'; renderCurrentForestPet_(); return;
+    }
+    if (currentChild === childId && currentSubTab === 'forestpet') await playTreeRewardSequence_(normalized.result);
+    clearTreeOpenPending_(childId); // 同時清掉可能殘留但無法解析的舊值；成功不依賴它
+    state.recoveryAvailable = false;
+    if (currentChild === childId && currentSubTab === 'forestpet') showTreeRewardResult_(normalized.result);
+    const loaded = await loadAll('tree-server-recovery-success');
+    await refreshTreeStatus_(childId, { reason: 'tree-server-recovery-success', silent: true });
+    if (!loaded) showToast('⚠️ 原交易已完成，但最新資料尚待更新', 'warn');
+    return;
+  }
+  if (isPhase2ATransportError_(res) || res.error === 'internal_error') {
+    state.status = 'blocked'; state.recoveryAvailable = true;
+    state.message = '網路結果不確定；後端仍會重新核對，請稍後再按同一個恢復按鈕。';
+  } else {
+    state.status = 'blocked'; state.recoveryAvailable = false;
+    state.message = res.error === 'pet_not_ready'
+      ? '後端尚未確認寵物，請聯絡管理員。'
+      : '這筆果實交易無法通過安全恢復核對，請聯絡管理員。';
+  }
   renderCurrentForestPet_();
 }
 
@@ -4517,7 +4587,9 @@ function renderTreeSection_(childId, cachedOnly) {
     status = `<span class="tree-warning">${state.message || '有一筆果實交易待確認。'}</span>`;
     actions = pending
       ? `<button class="tree-action-btn" onclick="resumePendingTreeOpen_('${childId}')">繼續確認原請求</button>`
-      : `<button class="tree-action-btn secondary" onclick="refreshTreeStatus_('${childId}',{reason:'tree-retry'})">重新確認</button>`;
+      : state.recoveryAvailable
+        ? `<button class="tree-action-btn" onclick="resumeServerTreeOpen_('${childId}')">繼續完成上次果實</button>`
+        : `<button class="tree-action-btn secondary" onclick="refreshTreeStatus_('${childId}',{reason:'tree-retry'})">重新確認</button>`;
   } else {
     status = state.status === 'error' ? state.message : '按下更新，看看樹上有沒有新驚喜。';
     actions = `<button class="tree-action-btn secondary" onclick="refreshTreeStatus_('${childId}',{reason:'tree-initial'})">更新驚喜樹</button>`;
