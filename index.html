@@ -7113,6 +7113,81 @@ function checkPin() {
 
 // ── 媽媽後台自動重整（每30秒，背景運作，畫面上不顯示倒數狀態）──
 let mamaRefreshTimer = null;
+const MAMA_CHORE_TIMEOUT_MS = 10000;
+let mamaReviewRefreshInFlight_ = null;
+let mamaReviewRequestSeq_ = 0;
+let mamaReviewRenderedSig_ = '';
+
+function normalizeMamaReviewSnapshot_(raw) {
+  if (!raw || raw.success !== true || raw.schema_version !== 1 || !raw.balances || !raw.pending) return null;
+  const result = { balances: {}, pending: {}, outcome: null };
+  for (const id of ['candice', 'harris']) {
+    const balance = raw.balances[id];
+    const list = raw.pending[id];
+    if (!Number.isSafeInteger(balance) || balance < 0 || !Array.isArray(list)) return null;
+    const seen = new Set();
+    result.balances[id] = balance;
+    result.pending[id] = [];
+    for (const item of list) {
+      if (!item || typeof item.declare_id !== 'string' || !item.declare_id || seen.has(item.declare_id) ||
+          typeof item.task_id !== 'string' || typeof item.task_name !== 'string' ||
+          !Number.isFinite(item.reward_coins) || item.reward_coins < 0 ||
+          (item.is_double !== 0 && item.is_double !== 1) || typeof item.declared_at !== 'string') return null;
+      seen.add(item.declare_id);
+      result.pending[id].push(item);
+    }
+  }
+  if (raw.outcome !== null && raw.outcome !== undefined) {
+    const o = raw.outcome;
+    if (!o || typeof o.declare_id !== 'string' || !o.declare_id ||
+        !['candice','harris'].includes(o.child_id) || !['review','claimed','rejected'].includes(o.status)) return null;
+    result.outcome = { declare_id:o.declare_id, child_id:o.child_id, status:o.status };
+  }
+  return result;
+}
+
+function mamaReviewSignature_() {
+  return JSON.stringify(['candice','harris'].map(id => ({
+    id, balance: allData[id]?.balance,
+    pending: (allData[id]?.pendingChoreDeclarations || []).map(x => [x.declare_id,x.task_id,x.task_name,x.reward_coins,x.is_double,x.declared_at])
+  })));
+}
+
+function applyMamaReviewSnapshot_(snapshot, renderIfChanged) {
+  const before = mamaReviewSignature_();
+  ['candice','harris'].forEach(id => {
+    allData[id] = Object.assign({}, allData[id] || {}, {
+      balance: snapshot.balances[id],
+      pendingChoreDeclarations: snapshot.pending[id]
+    });
+  });
+  updateBalanceDisplay();
+  const after = mamaReviewSignature_();
+  if (renderIfChanged && currentMamaTab === 'approve' && before !== after) renderApprove();
+  mamaReviewRenderedSig_ = after;
+  return before !== after;
+}
+
+async function fetchMamaReviewSnapshot_(options = {}) {
+  if (mamaReviewRefreshInFlight_ && !options.declareId) return mamaReviewRefreshInFlight_;
+  const requestSeq = ++mamaReviewRequestSeq_;
+  const run = (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs || MAMA_CHORE_TIMEOUT_MS);
+    try {
+      const suffix = options.declareId ? '&declareId=' + encodeURIComponent(options.declareId) : '';
+      const response = await fetch(API + '?action=getMamaChoreReviewSnapshot' + suffix, { signal: controller.signal });
+      const snapshot = normalizeMamaReviewSnapshot_(await response.json());
+      if (!snapshot || requestSeq !== mamaReviewRequestSeq_) return null;
+      applyMamaReviewSnapshot_(snapshot, options.renderIfChanged !== false);
+      return snapshot;
+    } catch (e) { return null; }
+    finally { clearTimeout(timer); }
+  })();
+  if (!options.declareId) mamaReviewRefreshInFlight_ = run;
+  try { return await run; }
+  finally { if (!options.declareId && mamaReviewRefreshInFlight_ === run) mamaReviewRefreshInFlight_ = null; }
+}
 
 function startMamaAutoRefresh() {
   stopMamaAutoRefresh();
@@ -7121,9 +7196,8 @@ function startMamaAutoRefresh() {
   mamaRefreshTimer = setInterval(async () => {
     // 只在審核和訂單頁自動刷新（避免打斷編輯中的菜單/家事/處罰）
     if (currentMamaTab === 'approve' || currentMamaTab === 'orders') {
-      await loadAll();
-      loadMamaTab(currentMamaTab);
-      showToast('🔄 已自動更新', '');
+      if (currentMamaTab === 'approve') await fetchMamaReviewSnapshot_({ renderIfChanged:true });
+      else { await loadAll(); loadMamaTab('orders'); }
     }
   }, 30000);
 }
@@ -7144,8 +7218,8 @@ function switchMamaTab(tab) {
 // 媽媽端：手動立即更新按鈕
 async function manualRefreshMama() {
   showToast('🔄 更新中...', '');
-  await loadAll();
-  loadMamaTab(currentMamaTab);
+  if (currentMamaTab === 'approve') await fetchMamaReviewSnapshot_({ renderIfChanged:true });
+  else { await loadAll(); loadMamaTab(currentMamaTab); }
   showToast('✅ 已更新！', 'success');
 }
 
@@ -7153,7 +7227,6 @@ async function loadMamaAll() {
   await loadAll();
   requestAnimationFrame(() => {
     switchMamaTab(currentMamaTab);
-    setTimeout(() => switchMamaTab(currentMamaTab), 300);
   });
 }
 
@@ -7191,7 +7264,7 @@ function renderApprove() {
   list.innerHTML = pending.map(c => {
     const m = MEMBERS[c.childId];
     return `
-      <div class="review-card ${m.accentClass}-accent">
+      <div class="review-card ${m.accentClass}-accent" data-declare-id="${c.declare_id}">
         <div class="review-card-top">
           <div class="review-avatar ${c.childId}" style="overflow:hidden;">${memberAvatar(c.childId, 32)}</div>
           <div>
@@ -7202,7 +7275,7 @@ function renderApprove() {
         </div>
         <div class="review-actions">
           <button class="rev-btn approve" onclick="approveChore('${c.declare_id}','${c.childId}',${c.reward_coins * (c.is_double === 1 ? 2 : 1)},'${c.task_name}',this)">✅ 通過，給幣！</button>
-          <button class="rev-btn reject"  onclick="rejectChore('${c.declare_id}','${c.childId}','${c.task_name}')">❌ 退回重做</button>
+          <button class="rev-btn reject"  onclick="rejectChore('${c.declare_id}','${c.childId}','${c.task_name}',this)">❌ 退回重做</button>
         </div>
       </div>`;
   }).join('');
@@ -8236,57 +8309,125 @@ async function saveChoreChallenge(taskId) {
 // ── MAMA ACTIONS ──
 const processingChores = new Set(); // 記錄正在審核中的家事，避免連點重複給幣
 
+function setChoreCardBusy_(choreId, busy, sourceButton) {
+  const card = sourceButton?.closest('.review-card') || document.querySelector(`.review-card[data-declare-id="${CSS.escape(choreId)}"]`);
+  if (!card) return;
+  card.querySelectorAll('button').forEach(button => {
+    button.disabled = busy;
+    button.style.opacity = busy ? '0.5' : '';
+    button.style.pointerEvents = busy ? 'none' : '';
+  });
+  if (busy && sourceButton) sourceButton.textContent = '處理中...';
+}
+
+function applyCompletedChoreReview_(choreId, childId, newBalance) {
+  if (allData[childId]) {
+    allData[childId].pendingChoreDeclarations = (allData[childId].pendingChoreDeclarations || [])
+      .filter(item => item.declare_id !== choreId);
+    if (Number.isSafeInteger(newBalance) && newBalance >= 0) allData[childId].balance = newBalance;
+  }
+  updateBalanceDisplay();
+  if (currentMamaTab === 'approve') renderApprove();
+  mamaReviewRenderedSig_ = mamaReviewSignature_();
+}
+
+async function sendChoreReviewMutation_(action, choreId, childId) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, MAMA_CHORE_TIMEOUT_MS);
+  try {
+    const url = `${API}?action=${action}&declareId=${encodeURIComponent(choreId)}&childId=${encodeURIComponent(childId)}`;
+    const response = await fetch(url, { signal: controller.signal });
+    return { kind:'response', data:await response.json() };
+  } catch (error) {
+    return { kind:timedOut ? 'timeout' : 'network', error };
+  } finally { clearTimeout(timer); }
+}
+
+async function verifyChoreReviewOutcome_(choreId, childId, expectedStatus) {
+  const snapshot = await fetchMamaReviewSnapshot_({ declareId:choreId, renderIfChanged:false });
+  const outcome = snapshot?.outcome;
+  if (!outcome || outcome.declare_id !== choreId || outcome.child_id !== childId) return { confirmed:false, snapshot };
+  return { confirmed:outcome.status === expectedStatus, stillReview:outcome.status === 'review', snapshot };
+}
+
 async function approveChore(choreId, childId, coins, taskName, btnEl) {
   if (processingChores.has(choreId)) return; // 已經在處理中，忽略這次點擊
   processingChores.add(choreId);
 
-  // 立即把按鈕反黑（disable + 變灰），並鎖住同一張卡片裡的退回按鈕
   const btn = btnEl || (window.event && window.event.target);
-  let card = null;
-  if (btn) {
-    card = btn.closest('.review-card') || btn.parentElement;
-    btn.disabled = true;
-    btn.textContent = '處理中...';
-    btn.style.opacity = '0.5';
-    btn.style.pointerEvents = 'none';
-  }
-  if (card) {
-    card.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.pointerEvents = 'none'; });
-  }
-
+  setChoreCardBusy_(choreId, true, btn);
   showToast('處理中...', '');
-  const url = `${API}?action=approveChore&declareId=${encodeURIComponent(choreId)}&childId=${childId}`;
   try {
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.success) {
+    const result = await sendChoreReviewMutation_('approveChore', choreId, childId);
+    const data = result.data;
+    if (result.kind === 'response' && data?.success === true && data.declareId === choreId && data.childId === childId) {
+      applyCompletedChoreReview_(choreId, childId, data.newBalance);
       showToast(`🎉 ${MEMBERS[childId].name} 獲得 ${data.coinsAwarded || coins} 枚代幣！`, 'success');
       playAudioAsset('coin');
       burst(120, '#ffb830');
+      queueMicrotask(() => fetchMamaReviewSnapshot_({ renderIfChanged:true }));
+    } else if (result.kind === 'response' && data?.alreadyProcessed === true && data.declareId === choreId && data.status === 'claimed') {
+      const checked = await verifyChoreReviewOutcome_(choreId, childId, 'claimed');
+      if (checked.confirmed) {
+        applyCompletedChoreReview_(choreId, childId, checked.snapshot?.balances?.[childId]);
+        showToast(`🎉 ${MEMBERS[childId].name} 的家事已核准！`, 'success');
+      } else {
+        showToast('⚠️ 結果暫時無法確認，請稍後更新', 'error');
+        setChoreCardBusy_(choreId, false, btn);
+      }
+    } else if (result.kind === 'response') {
+      showToast('⚠️ ' + (data?.error || '發幣失敗'), 'error');
+      setChoreCardBusy_(choreId, false, btn);
     } else {
-      showToast('⚠️ ' + (data.error || '發幣失敗'), 'error');
+      const checked = await verifyChoreReviewOutcome_(choreId, childId, 'claimed');
+      if (checked.confirmed) {
+        applyCompletedChoreReview_(choreId, childId, checked.snapshot?.balances?.[childId]);
+        showToast(`🎉 ${MEMBERS[childId].name} 的家事已核准！`, 'success');
+      } else {
+        showToast(checked.stillReview ? '⚠️ 請求未完成，請再試一次' : '⚠️ 結果暫時無法確認，請稍後更新', 'error');
+        setChoreCardBusy_(choreId, false, btn);
+      }
     }
-  } catch(e) { showToast('⚠️ 網路錯誤', 'error'); }
-  finally {
-    processingChores.delete(choreId);
-  }
-  setTimeout(() => { loadAll().then(() => loadMamaTab('approve')); }, 1000);
+  } finally { processingChores.delete(choreId); }
 }
 
-async function rejectChore(choreId, childId, taskName) {
+async function rejectChore(choreId, childId, taskName, btnEl) {
   if (processingChores.has(choreId)) return; // 避免跟核准衝突重複送出
   if (!await showConfirm(`確定退回「${taskName}」？\n${MEMBERS[childId].name} 需要重新完成`)) return;
   processingChores.add(choreId);
-  const url = `${API}?action=rejectChore&declareId=${encodeURIComponent(choreId)}&childId=${childId}`;
+  const btn = btnEl || (window.event && window.event.target);
+  setChoreCardBusy_(choreId, true, btn);
   try {
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.error) showToast('⚠️ ' + data.error, 'error');
-    else showToast('已退回，請重新完成', 'error');
-  } catch(e) {
-    showToast('⚠️ 網路錯誤', 'error');
+    const result = await sendChoreReviewMutation_('rejectChore', choreId, childId);
+    const data = result.data;
+    if (result.kind === 'response' && data?.success === true && data.declareId === choreId && data.childId === childId) {
+      applyCompletedChoreReview_(choreId, childId);
+      showToast('已退回，請重新完成', 'error');
+      queueMicrotask(() => fetchMamaReviewSnapshot_({ renderIfChanged:true }));
+    } else if (result.kind === 'response' && data?.alreadyProcessed === true && data.declareId === choreId && data.status === 'rejected') {
+      const checked = await verifyChoreReviewOutcome_(choreId, childId, 'rejected');
+      if (checked.confirmed) {
+        applyCompletedChoreReview_(choreId, childId, checked.snapshot?.balances?.[childId]);
+        showToast('已確認退回完成', 'error');
+      } else {
+        showToast('⚠️ 結果暫時無法確認，請稍後更新', 'error');
+        setChoreCardBusy_(choreId, false, btn);
+      }
+    } else if (result.kind === 'response') {
+      showToast('⚠️ ' + (data?.error || '退回失敗'), 'error');
+      setChoreCardBusy_(choreId, false, btn);
+    } else {
+      const checked = await verifyChoreReviewOutcome_(choreId, childId, 'rejected');
+      if (checked.confirmed) {
+        applyCompletedChoreReview_(choreId, childId, checked.snapshot?.balances?.[childId]);
+        showToast('已確認退回完成', 'error');
+      } else {
+        showToast(checked.stillReview ? '⚠️ 請求未完成，請再試一次' : '⚠️ 結果暫時無法確認，請稍後更新', 'error');
+        setChoreCardBusy_(choreId, false, btn);
+      }
+    }
   } finally { processingChores.delete(choreId); }
-  setTimeout(() => { loadAll().then(() => loadMamaTab('approve')); }, 1000);
 }
 
 const processingOrders = new Set(); // 記錄正在處理中的訂單，避免連點重複
