@@ -2128,6 +2128,20 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
   finally { if (_childSectionInFlight_.get(key) === task) _childSectionInFlight_.delete(key); }
 }
 
+// 進站後菜單先載完，趁使用者還在看菜單時，於背景依序（錯開時間，避免同時打好幾個
+// 請求到 Apps Script）預抓同一位孩子其餘分頁（家事／訂單／違規／銀行），讓使用者
+// 真的點過去時，loadChildSection_() 多半已經有快取可以立即顯示，不用現場等待。
+// 只預抓目前這位孩子、只補資料不強制渲染（renderChildSectionIfCurrent_ 本來就只在
+// 使用者切到該分頁時才畫），沿用 P1.3 不擴大回雙孩子完整載入的原則。
+function prefetchRemainingChildSections_(childId) {
+  CHILD_SECTION_IDS.filter(s => s !== 'menu').forEach((section, i) => {
+    setTimeout(() => {
+      if (currentChild !== childId || hasChildSectionData_(childId, section)) return;
+      void loadChildSection_(section, childId, { reason: 'prefetch', silent: true });
+    }, 400 * (i + 1));
+  });
+}
+
 // 首頁標題列同時顯示兩個孩子的代幣，但 P1.3 之後只會載入目前孩子的分頁資料。
 // 用既有的輕量分頁 API 補讀另一位孩子，且只採用通過驗證的 balance；不把另一位
 // 孩子的菜單／家事／訂單資料合併進 allData，避免恢復舊版雙孩子完整載入。
@@ -2318,6 +2332,7 @@ async function switchChild(id) {
   } else {
     await loadChildSection_(currentSubTab, id, { reason: 'switch-child', force: true });
   }
+  prefetchRemainingChildSections_(id); // 換孩子後也趁背景把這位孩子其餘分頁預抓好，減少之後切分頁的等待
 }
 
 // ── SUB TABS ──
@@ -8108,6 +8123,17 @@ async function updateBankRateBoard(childId) {
   if (previewEl) previewEl.innerHTML = '+' + interestAmt + ' ' + C(15);
 }
 
+// 進站當下（跟預抓其餘分頁同時）就先把利率抓回來、存進 cachedRate，這樣使用者第一次
+// 點進銀行分頁時 updateBankRateBoard() 多半已經有現成的利率可用，不用臨時再等一次
+// 這支請求。只是把既有讀取提早，沒有改動利率／利息的計算方式或預設值退場邏輯。
+function prefetchBankRate_() {
+  if (cachedRate !== null) return;
+  fetch(API + '?action=getSetting&key=interest_rate')
+    .then(res => res.json())
+    .then(data => { if (cachedRate === null) cachedRate = parseFloat(data.value || 0.02); })
+    .catch(() => {}); // 失敗就沿用 updateBankRateBoard() 既有的重試與預設值邏輯
+}
+
 function showRateDetail() {
   const childId = currentChild;
   const balance = allData[childId]?.balance ?? 0;
@@ -9914,6 +9940,8 @@ document.getElementById('bank-tab-icon').src = IMG_HEDGEHOG;
 void loadChildSection_('menu', currentChild, { reason: 'page-load' }).finally(() => {
   const siblingId = currentChild === 'candice' ? 'harris' : 'candice';
   void loadHeaderBalanceOnly_(siblingId);
+  prefetchRemainingChildSections_(currentChild);
+  prefetchBankRate_();
 });
 
 // 顯示歡迎頁
