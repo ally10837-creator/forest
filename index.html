@@ -7117,6 +7117,7 @@ const MAMA_CHORE_TIMEOUT_MS = 10000;
 let mamaReviewRefreshInFlight_ = null;
 let mamaReviewRequestSeq_ = 0;
 let mamaReviewRenderedSig_ = '';
+let mamaPenaltyCatalogCache_ = { hasValue:false, items:[], signature:'' };
 
 function normalizeMamaReviewSnapshot_(raw) {
   if (!raw || raw.success !== true || raw.schema_version !== 1 || !raw.balances || !raw.pending) return null;
@@ -7206,33 +7207,58 @@ function stopMamaAutoRefresh() {
   if (mamaRefreshTimer) { clearInterval(mamaRefreshTimer); mamaRefreshTimer = null; }
 }
 
-function switchMamaTab(tab) {
+function switchMamaTab(tab, options = {}) {
   currentMamaTab = tab;
   document.querySelectorAll('.mama-tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('mtab-'+tab).classList.add('active');
   document.querySelectorAll('.mama-tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('mtab-content-'+tab).classList.add('active');
-  loadMamaTab(tab);
+  loadMamaTab(tab, options);
 }
 
 // 媽媽端：手動立即更新按鈕
 async function manualRefreshMama() {
   showToast('🔄 更新中...', '');
-  if (currentMamaTab === 'approve') await fetchMamaReviewSnapshot_({ renderIfChanged:true });
-  else { await loadAll(); loadMamaTab(currentMamaTab); }
-  showToast('✅ 已更新！', 'success');
+  let updated = false;
+  if (currentMamaTab === 'approve') {
+    updated = !!(await fetchMamaReviewSnapshot_({ renderIfChanged:true }));
+  } else {
+    const loaded = await loadAll();
+    if (loaded) {
+      if (currentMamaTab === 'penalty-edit') updated = renderPenaltyEditor();
+      else { loadMamaTab(currentMamaTab); updated = true; }
+    }
+  }
+  showToast(updated ? '✅ 已更新！' : '⚠️ 更新失敗，已保留目前畫面', updated ? 'success' : 'error');
 }
 
 async function loadMamaAll() {
-  await loadAll();
+  const loaded = await loadAll();
+  if (!loaded) return false;
   requestAnimationFrame(() => {
-    switchMamaTab(currentMamaTab);
+    // loadAll 已帶回完整權威資料，不再額外重送同一個審核快照。
+    switchMamaTab(currentMamaTab, { skipApproveSnapshot:true });
   });
+  return true;
 }
 
-function loadMamaTab(tab) {
-  if (!allData.candice) { loadAll().then(() => loadMamaTab(tab)); return; }
-  if (tab === 'approve')      renderApprove();
+function loadMamaTab(tab, options = {}) {
+  if (!allData.candice) {
+    loadAll().then(loaded => {
+      if (loaded) loadMamaTab(tab, options);
+      else if (currentMamaTab === tab) showToast('⚠️ 資料載入失敗，請稍後重試', 'error');
+    });
+    return;
+  }
+  if (tab === 'approve') {
+    renderApprove();
+    // 先呈現快取，再立即取得權威輕量快照；共用既有 single-flight，快速切換不會重複送出。
+    if (!options.skipApproveSnapshot) {
+      fetchMamaReviewSnapshot_({ renderIfChanged:true }).then(snapshot => {
+        if (!snapshot && currentMamaTab === 'approve') showToast('⚠️ 審核清單更新失敗，已保留目前畫面', 'error');
+      });
+    }
+  }
   if (tab === 'orders')       renderMamaOrders();
   if (tab === 'coins') { renderCoins(); loadInterestRate(); loadWeatherHolidayStatus(); }
   if (tab === 'menu-edit')    renderMenuEditor();
@@ -8531,41 +8557,111 @@ async function adjustCoins(childId, sign) {
 }
 
 // ── 熊貓教官處罰區：媽媽端 ──
+function normalizePenaltyListState_(childData) {
+  const state = childData?.penaltyListState;
+  if (!state || state.schema_version !== 1 || !['ready','error'].includes(state.status) || !Array.isArray(state.items)) {
+    return { status:'error', items:[] };
+  }
+  if (state.status === 'error') return state.items.length === 0 ? { status:'error', items:[] } : { status:'error', items:[] };
+  const seen = new Set();
+  const items = [];
+  for (const item of state.items) {
+    if (!item || typeof item.penalty_id !== 'string' || !item.penalty_id.trim() || seen.has(item.penalty_id.trim()) ||
+        typeof item.reason !== 'string' || !item.reason.trim() || !Number.isSafeInteger(item.amount) || item.amount <= 0) {
+      return { status:'error', items:[] };
+    }
+    const normalized = { penalty_id:item.penalty_id.trim(), reason:item.reason.trim(), amount:item.amount };
+    seen.add(normalized.penalty_id);
+    items.push(normalized);
+  }
+  if (!Array.isArray(childData.penaltyList) || JSON.stringify(childData.penaltyList) !== JSON.stringify(items)) {
+    return { status:'error', items:[] };
+  }
+  return { status:'ready', items };
+}
+
+function resolveMamaPenaltyList_() {
+  const candice = normalizePenaltyListState_(allData.candice);
+  const harris = normalizePenaltyListState_(allData.harris);
+  if (candice.status === 'ready' && harris.status === 'ready') {
+    const cSig = JSON.stringify(candice.items);
+    return cSig === JSON.stringify(harris.items)
+      ? { status:'ready', items:candice.items }
+      : { status:'error', items:[] };
+  }
+  if (candice.status === 'ready' && candice.items.length > 0) return candice;
+  if (harris.status === 'ready' && harris.items.length > 0) return harris;
+  return { status:'error', items:[] };
+}
+
+function penaltyListView_() {
+  const resolved = resolveMamaPenaltyList_();
+  if (resolved.status === 'ready') {
+    const signature = JSON.stringify(resolved.items);
+    mamaPenaltyCatalogCache_ = { hasValue:true, items:resolved.items, signature };
+    return { status:'ready', items:resolved.items, stale:false };
+  }
+  return {
+    status:'error',
+    items:mamaPenaltyCatalogCache_.hasValue ? mamaPenaltyCatalogCache_.items : [],
+    stale:mamaPenaltyCatalogCache_.hasValue
+  };
+}
+
 // 渲染快速處罰按鈕（固定清單，每項各配「扣蔓蔓」「扣昊昊」雙按鈕）+ 下方清單管理區
 function renderPenaltyEditor() {
-  // penaltyList 從 candice 或 harris 任一份資料取得（兩份都一樣，取第一個有資料的）
-  const list = allData.candice?.penaltyList || allData.harris?.penaltyList || [];
-
   // 如果資料還沒載入完成，顯示載入中並重試
   if (!allData.candice && !allData.harris) {
-    loadAll().then(() => renderPenaltyEditor());
-    return;
+    loadAll().then(loaded => {
+      if (loaded) renderPenaltyEditor();
+      else {
+        const quickEl = document.getElementById('penalty-quick-list');
+        const editorEl = document.getElementById('penalty-editor');
+        if (quickEl) quickEl.innerHTML = '<div style="font-size:12px;color:#c95745;">⚠️ 處罰清單載入失敗，請稍後重試</div>';
+        if (editorEl) editorEl.innerHTML = '<div class="empty">無法確認處罰清單</div>';
+      }
+    });
+    return false;
   }
+
+  const view = penaltyListView_();
+  const list = view.items;
+  const readError = view.status !== 'ready';
+  const disabled = readError ? ' disabled' : '';
+  const warning = readError
+    ? `<div style="font-size:12px;color:#c95745;margin-bottom:8px;">⚠️ 處罰清單資料無法確認，${view.stale ? '目前保留上次已驗證清單。' : '請按「立即更新」重試。'}</div>`
+    : '';
 
   // 上半部：每個違規項目各配兩顆獨立扣款按鈕
   const quickEl = document.getElementById('penalty-quick-list');
-  quickEl.innerHTML = list.length === 0
+  quickEl.innerHTML = warning + (list.length === 0
     ? `<div style="font-size:12px;color:var(--cocoa-soft);">尚未建立固定違規項目，可在下方新增，或直接用自訂原因扣款</div>`
     : list.map(p => `
         <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f0ebe0;">
           <div style="flex:2;min-width:0;font-size:13px;font-weight:700;">${p.reason} <span style="color:#e6483c;">−${p.amount}</span></div>
-          <button class="save-row-btn" style="flex:1;min-width:64px;" onclick="applyQuickPenalty('${p.penalty_id}','${p.reason}',${p.amount},'candice')">🐰 扣蔓蔓</button>
-          <button class="save-row-btn" style="flex:1;min-width:64px;" onclick="applyQuickPenalty('${p.penalty_id}','${p.reason}',${p.amount},'harris')">🐻 扣昊昊</button>
-        </div>`).join('');
+          <button class="save-row-btn" style="flex:1;min-width:64px;" onclick="applyQuickPenalty('${p.penalty_id}','${p.reason}',${p.amount},'candice')"${disabled}>🐰 扣蔓蔓</button>
+          <button class="save-row-btn" style="flex:1;min-width:64px;" onclick="applyQuickPenalty('${p.penalty_id}','${p.reason}',${p.amount},'harris')"${disabled}>🐻 扣昊昊</button>
+        </div>`).join(''));
 
   // 下半部：固定清單管理（新增/編輯/刪除）
   const editorEl = document.getElementById('penalty-editor');
-  if (!list.length) { editorEl.innerHTML = '<div class="empty">目前沒有固定違規項目</div>'; return; }
+  if (!list.length) {
+    editorEl.innerHTML = readError
+      ? '<div class="empty">處罰清單讀取失敗，已保留原畫面資料；請稍後重試</div>'
+      : '<div class="empty">目前沒有固定違規項目</div>';
+    return !readError;
+  }
   editorEl.innerHTML = list.map(p => `
     <div class="sheet-row" id="prow-${p.penalty_id}">
       <div class="sheet-row-emoji">🐼</div>
       <div class="sheet-row-body">
         <input class="sheet-field wide" id="pn-${p.penalty_id}" value="${p.reason}" placeholder="違規原因">
         <input class="sheet-field num"  id="pa-${p.penalty_id}" type="number" value="${p.amount}" placeholder="扣幣">
-        <button class="save-row-btn" onclick="savePenaltyListItem('${p.penalty_id}')">💾 儲存</button>
+        <button class="save-row-btn" onclick="savePenaltyListItem('${p.penalty_id}')"${disabled}>💾 儲存</button>
       </div>
-      <button class="del-btn" onclick="deletePenaltyListItem('${p.penalty_id}')">🗑</button>
+      <button class="del-btn" onclick="deletePenaltyListItem('${p.penalty_id}')"${disabled}>🗑</button>
     </div>`).join('');
+  return !readError;
 }
 
 // 點快速項目按鈕 → 立即對指定孩子執行扣款（無審核，媽媽即是審核者）
