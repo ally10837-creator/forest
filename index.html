@@ -3440,6 +3440,19 @@ function onEnterForestPet_(opts) {
   const silent = !!(opts && opts.silent);
   if (!silent) flushDeferredTreeRender_(childId); // 重新進頁：先把先前 defer 的一次畫掉
   if (classifyServerPet_(allData[childId]).kind === 'present') {
+    // R3 修正（ChatGPT 覆核 2026-09-22）：reconcileTreeOpenPending_ 必須在
+    // refreshTreeStatus_ 之前呼叫。refreshTreeStatus_ 非 silent 時一進函式就會同步把
+    // state.status 從 'opening' 改成 'loading'（不管果實是不是真的還在開），如果先呼叫
+    // refreshTreeStatus_ 再呼叫 reconcile，reconcile 內「state.status==='opening' 就跳過」
+    // 的防重複判斷會失效，等於在原本 openTreeReward 請求還沒完成時多送一次
+    // getPetMutationStatus，極端狀況下兩邊都可能算出成功而各自播一次動畫/重讀。兩個函式
+    // 互不依賴彼此的執行結果，對調順序不影響其他行為。
+    // 主動核對本機是否殘留一筆已被後端處理掉的果實 pending 旗標；規則見
+    // reconcileTreeOpenPending_ 內的白名單，結果不確定時一律保留、不動畫面。
+    // R2 修正：只在「真的進頁」（非 silent）時核對一次，30 秒背景 tick（silent）不重複
+    // 查未決交易，避免只要森林夥伴頁開著就每 30 秒固定多一個請求；使用者仍可用畫面上
+    // 的「確認上次果實交易」／「確認果實交易」按鈕隨時手動重查。
+    if (!silent) void reconcileTreeOpenPending_(childId);
     void refreshTreeStatus_(childId, { reason: 'enter-forest-pet', silent: silent });
   }
   void refreshPetAccessoryEquipState_(childId);
@@ -4280,6 +4293,118 @@ function getOrCreateTreeOpenPending_(childId, fruitId) {
 }
 function clearTreeOpenPending_(childId) { localStorage.removeItem(treeOpenPendingKey_(childId)); }
 
+// P-Gate0-Phase1（2026-09-22 候選 R2，未部署）：本機仍有未清的果實 pending 旗標時，主動用
+// 既有唯讀 getPetMutationStatus 核對後端真實狀態，取代原本「只能靠原裝置親自收到原請求
+// 回應」才會清除的行為。規則刻意保守（fail closed）：
+//   - status==='success' 且嚴格通過 normalizeTreeOpenResponse_ 驗證 → 清除並補顯示一次獎勵。
+//   - status==='failed' 且 failure_code==='fruit_not_available'（與 resumePendingTreeOpen_
+//     既有處理的白名單一致）→ 清除，樹的狀態改以最新讀取為準。
+//   - 其餘任何情況（processing／error_unsynced／conflict／not_found／未知 failed／格式
+//     無法驗證／逾時／網路錯誤）→ 完全不動 pending、不變更任何畫面狀態。絕不能因為結果
+//     不確定就解除保護。
+// R2 修正（ChatGPT 覆核 2026-09-22）：
+//   1. options.announce：只有「使用者親自按按鈕」呼叫時傳 true。這種情況下即使結果無法
+//      判定，也要用 showToast 給一個明確提示，不能讓使用者按了按鈕卻完全沒反應；自動
+//      核對（進頁時）維持安靜，不然背景每次核對都跳提示會很吵。同一個孩子若已有一次
+//      安靜的核對在飛行中，之後才追加的 announce:true 呼叫會直接「升級」那次飛行中的
+//      請求繼續等，而不是另外再打一次。
+//   2. 過期回應判定改成同時比對 clientRequestId／fruitId／createdAt 三個欄位，不再只看
+//      clientRequestId，避免理論上的欄位單一比對漏洞。
+function announceReconcileHold_(code) {
+  var msg = {
+    processing: '後端仍在確認上次的果實交易，請稍後再試一次。',
+    error_unsynced: '這筆果實交易需要人工核對，請聯絡管理員。',
+    conflict: '這筆果實交易需要人工核對，請聯絡管理員。',
+    not_found: '找不到這筆果實交易的後端紀錄，請聯絡管理員確認。',
+    invalid_result: '上次的果實交易狀態無法確認，請聯絡管理員。',
+    network_error: '目前無法連線確認，請稍後再試一次。'
+  }[code];
+  if (msg) showToast(msg, 'warn');
+}
+const _treeOpenReconcileRequests_ = Object.create(null);
+async function reconcileTreeOpenPending_(childId, options) {
+  const wantAnnounce = !!(options && options.announce);
+  const pending = getTreeOpenPending_(childId);
+  if (!pending) return;
+  const state = getTreeState_(childId);
+  if (state.status === 'opening') return; // 原生流程已在跑，交給它處理，避免重複播放/重複清除
+
+  const existing = _treeOpenReconcileRequests_[childId];
+  if (existing) {
+    if (wantAnnounce) existing.announce = true; // 升級：飛行中那次原本安靜，現在也要給提示
+    return existing.promise;
+  }
+
+  const samePending = (a, b) => !!a && !!b &&
+    a.clientRequestId === b.clientRequestId && a.fruitId === b.fruitId && a.createdAt === b.createdAt;
+
+  const entry = { announce: wantAnnounce, promise: null };
+  entry.promise = (async () => {
+    let res;
+    try {
+      res = await callPhase2A('getPetMutationStatus', {
+        childId,
+        clientRequestId: pending.clientRequestId,
+        mutationAction: 'openTreeReward',
+        targetId: pending.fruitId
+      }, { timeoutMs: PET_MUTATION_STATUS_TIMEOUT_MS });
+    } catch (e) {
+      if (entry.announce) announceReconcileHold_('network_error');
+      return; // 網路例外：保留 pending，下次進頁／使用者再按一次再核對
+    }
+
+    // 送出後，若這台裝置的 pending 已經不是同一筆（clientRequestId／fruitId／createdAt
+    // 三者都要一致），這裡的核對結果就不再適用，直接放棄，不覆寫任何狀態、也不提示。
+    const stillPending = getTreeOpenPending_(childId);
+    if (!samePending(stillPending, pending)) return;
+
+    if (res && res.ok === true && res.status === 'success') {
+      const normalized = normalizeTreeOpenResponse_(res, pending);
+      if (!normalized.ok) { if (entry.announce) announceReconcileHold_('invalid_result'); return; }
+      const stateNow = getTreeState_(childId);
+      if (stateNow.status === 'opening') return; // 原生流程搶先開始，讓它自己處理
+      clearTreeOpenPending_(childId);
+      if (currentChild === childId && currentSubTab === 'forestpet') {
+        await playTreeRewardSequence_(normalized.result);
+        showTreeRewardResult_(normalized.result);
+      }
+      const loaded = await loadAll('tree-open-reconciled');
+      await refreshTreeStatus_(childId, { reason: 'tree-open-reconciled', silent: true });
+      if (!loaded) showToast('⚠️ 上次的果實交易其實已完成，但最新資料尚待更新', 'warn');
+      return;
+    }
+
+    if (res && res.ok === true && res.status === 'failed' && res.failure_code === 'fruit_not_available') {
+      const stateNow = getTreeState_(childId);
+      if (stateNow.status === 'opening') return;
+      clearTreeOpenPending_(childId);
+      await refreshTreeStatus_(childId, { reason: 'tree-open-reconciled-unavailable', silent: true });
+      if (currentChild === childId && currentSubTab === 'forestpet') {
+        showToast('上次那顆果實已經不能打開，樹的狀態已更新。', 'warn');
+      }
+      return;
+    }
+
+    // processing／error_unsynced／conflict／not_found／未知 failed：一律不動 pending，
+    // 不變更任何畫面狀態；只有使用者親自按按鈕時才額外跳提示告知目前狀態。
+    if (entry.announce) {
+      // R3 修正（ChatGPT 覆核 2026-09-22）：callPhase2A 逾時/斷線時不會 throw，是正常
+      // resolve 成 {ok:false, error:'timeout'|'network_error'}（見 callPhase2A 自己的
+      // catch），上面的 try/catch 接不到這兩種情況。用既有的 isPhase2ATransportError_
+      // 明確分類到「目前無法連線」，不能落到最後的萬用「請聯絡管理員」。
+      if (res && res.ok === true && res.status === 'processing') announceReconcileHold_('processing');
+      else if (res && res.ok === true && res.status === 'error_unsynced') announceReconcileHold_('error_unsynced');
+      else if (res && res.ok === false && res.error === 'conflict') announceReconcileHold_('conflict');
+      else if (res && res.ok === false && res.error === 'not_found') announceReconcileHold_('not_found');
+      else if (isPhase2ATransportError_(res)) announceReconcileHold_('network_error');
+      else announceReconcileHold_('invalid_result');
+    }
+  })().finally(() => { delete _treeOpenReconcileRequests_[childId]; });
+
+  _treeOpenReconcileRequests_[childId] = entry;
+  return entry.promise;
+}
+
 // open_fruit schema v4 只接受正式 10 件配件的公開欄位；後端仍是權威來源，
 // 這份前端表只用來 fail closed，避免遭竄改或未知配件的加成被顯示為已確認。
 const TREE_ACCESSORY_BONUS_PUBLIC_CATALOG_ = Object.freeze({
@@ -4403,8 +4528,10 @@ async function resumePendingTreeOpen_(childId) {
   if (res.ok) {
     const normalized = normalizeTreeOpenResponse_(res, pending);
     if (!normalized.ok) { state.status = 'blocked'; state.message = '獎勵回應格式無法確認，已保留原請求。'; renderCurrentForestPet_(); return; }
-    if (currentChild === childId && currentSubTab === 'forestpet') await playTreeRewardSequence_(normalized.result);
+    // 後端已驗證通過＝終局成功；先清本機 pending 再播動畫，避免動畫播放中分頁被關閉／
+    // App 被系統終止時 pending 殘留（清除本身不代表推算成功，前提是上面已驗證過回應格式）。
     clearTreeOpenPending_(childId);
+    if (currentChild === childId && currentSubTab === 'forestpet') await playTreeRewardSequence_(normalized.result);
     if (currentChild === childId && currentSubTab === 'forestpet') showTreeRewardResult_(normalized.result);
     const loaded = await loadAll('tree-open-success');
     // silent：結果視窗此刻正開著（不安全）→ 只更新資料模型，等 closeTreeRewardResult_ 安全點再畫。
@@ -4457,9 +4584,11 @@ async function resumeServerTreeOpen_(childId) {
       state.status = 'blocked'; state.recoveryAvailable = false;
       state.message = '恢復結果格式無法確認，請聯絡管理員。'; renderCurrentForestPet_(); return;
     }
-    if (currentChild === childId && currentSubTab === 'forestpet') await playTreeRewardSequence_(normalized.result);
-    clearTreeOpenPending_(childId); // 同時清掉可能殘留但無法解析的舊值；成功不依賴它
+    // 同時清掉可能殘留但無法解析的舊值；成功不依賴它。清 pending 移到動畫之前，避免動畫
+    // 播放中分頁被關閉／App 被系統終止時 pending 殘留。
+    clearTreeOpenPending_(childId);
     state.recoveryAvailable = false;
+    if (currentChild === childId && currentSubTab === 'forestpet') await playTreeRewardSequence_(normalized.result);
     if (currentChild === childId && currentSubTab === 'forestpet') showTreeRewardResult_(normalized.result);
     const loaded = await loadAll('tree-server-recovery-success');
     await refreshTreeStatus_(childId, { reason: 'tree-server-recovery-success', silent: true });
@@ -4581,7 +4710,15 @@ function renderTreeSection_(childId, cachedOnly) {
     fruits = state.pendingFruits;
     status = fruits.length ? '有 ' + fruits.length + ' 顆成熟果實，點一顆打開看看吧！' : '現在還沒有成熟果實，完成家事後再回來看看吧！';
     if (state.unsupported) status += ' 有一種果實尚未支援，已安全保留。';
-    actions = `<button class="tree-action-btn secondary" onclick="refreshTreeStatus_('${childId}',{reason:'tree-button'})">更新驚喜樹</button>`;
+    if (pending) {
+      // 後端目前回報樹的狀態正常（沒有被擋），但這台裝置還留著一筆尚未核對完成的果實
+      // pending 旗標（reconcileTreeOpenPending_ 尚未判定出安全結果）——即使樹本身看起來
+      // 沒問題，仍必須讓使用者能自己按下去繼續確認，不能只靜靜卡著。
+      status += ' <span class="tree-warning">另外偵測到一筆尚未確認的果實交易，請按下方按鈕繼續確認。</span>';
+      actions = `<button class="tree-action-btn" onclick="resumePendingTreeOpen_('${childId}')">確認上次果實交易</button>`;
+    } else {
+      actions = `<button class="tree-action-btn secondary" onclick="refreshTreeStatus_('${childId}',{reason:'tree-button'})">更新驚喜樹</button>`;
+    }
   } else if (state.status === 'opening') { status = state.message || '正在打開果實……'; fruits = state.pendingFruits; disabled = true; }
   else if (state.status === 'blocked') {
     status = `<span class="tree-warning">${state.message || '有一筆果實交易待確認。'}</span>`;
@@ -5109,7 +5246,16 @@ function renderPetFood() {
   } else if (accessoryBlocked && (foodRecord.kind !== 'none' || guardRecord.kind !== 'none')) {
     notice = '同時發現食物與配件未決交易，請聯絡管理員核對。'; noticeClass = ' warning';
   } else if (treePending && (foodRecord.kind !== 'none' || guardRecord.kind !== 'none')) {
-    notice = '同時發現食物與果實未決交易，請聯絡管理員核對。'; noticeClass = ' warning';
+    notice = '同時發現食物與果實未決交易，請先按下方按鈕確認果實交易，或聯絡管理員核對。';
+    noticeClass = ' warning';
+    if (!busy) {
+      // R2 修正：這裡故意呼叫唯讀的 reconcileTreeOpenPending_，不能呼叫
+      // resumePendingTreeOpen_——後者一開頭就會因為 hasPetFoodProtection_ 為 true
+      // 直接回傳「同時發現食物與果實未決交易」的訊息，既不會核對後端、也不會清除
+      // 果實 pending，按了等於沒按。reconcileTreeOpenPending_ 沒有這個食物保護檢查，
+      // 純粹用既有唯讀端點核對，不會嘗試重送 openTreeReward，對食物 pending 完全安全。
+      resumeHtml = `<button class="tree-action-btn pet-food-resume-btn" onclick="reconcileTreeOpenPending_('${childId}',{announce:true}).then(renderPetFood)">確認果實交易</button>`;
+    }
   } else if (guardRecord.kind !== 'none') {
     notice = guardRecord.kind === 'valid'
       ? '這筆食物交易已標記為需要人工核對；所有購買、餵食與果實交易均已暫停。'
@@ -5130,6 +5276,9 @@ function renderPetFood() {
     }
   } else if (treePending) {
     notice = '有一筆果實交易待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
+    if (!busy) {
+      resumeHtml = `<button class="tree-action-btn pet-food-resume-btn" onclick="resumePendingTreeOpen_('${childId}').then(renderPetFood)">確認果實交易</button>`;
+    }
   } else if (accessoryBlocked) {
     notice = '有一筆配件交易待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
   } else if (careBlocked) {
@@ -9927,7 +10076,7 @@ void loadChildSection_('menu', currentChild, { reason: 'page-load' }).finally(()
 })();
 
 // 孩子頁面每 30 秒自動更新餘額和資料
-setInterval(async () => {
+async function backgroundChildTick_() {
   // 只在孩子頁面時更新，不打擾媽媽後台
   const childPageActive = document.getElementById('child-page').classList.contains('active');
   if (childPageActive) {
@@ -9943,7 +10092,16 @@ setInterval(async () => {
     }
   }
   updateBackgroundAudio(); // 不限定頁面，讓背景音軌不因切換孩子/子分頁/媽媽後台而停止
+}
+setInterval(() => {
+  // 瀏覽器分頁不在前景（切到別的分頁/App 進背景）時暫停這個 tick，避免持續打後端搶鎖；
+  // 分頁重新可見時由下面的 visibilitychange 立刻補打一次，不必等下一個完整 30 秒。
+  if (document.hidden) return;
+  void backgroundChildTick_();
 }, 30000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) void backgroundChildTick_();
+});
 </script>
 </div><!-- /app-wrap -->
 
