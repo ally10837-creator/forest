@@ -3481,6 +3481,21 @@ let petEconomyReadSeq_ = 0;
 const PET_ECONOMY_CACHE_TTL_MS = 60000;
 const _petEconomyRequests_ = Object.create(null);
 const _petEconomyCache_ = Object.create(null);
+
+// P-Incident20260922 候選（未部署）：森林夥伴請求最小本機診斷。純粹方便下次遇到「持續
+// 載入失敗」時，能直接回答「卡在哪一步、什麼原因」，不必再靠事後推論。只保留在記憶體裡
+// 的環狀緩衝區（最多 PET_DIAG_LOG_MAX_ 筆），不上傳、不寫入 localStorage、不影響任何
+// 判斷或畫面——任何記錄本身出錯都必須被吞掉，絕對不能反過來影響被記錄的那次請求。
+// 用 getPetDiagLog_() 在瀏覽器主控台查看（例如遠端協助排除孩子裝置上的問題時）。
+const PET_DIAG_LOG_MAX_ = 40;
+const _petDiagLog_ = [];
+function petDiagLog_(entry) {
+  try {
+    _petDiagLog_.push(Object.assign({ t: new Date().toISOString() }, entry));
+    if (_petDiagLog_.length > PET_DIAG_LOG_MAX_) _petDiagLog_.shift();
+  } catch (e) { /* 診斷本身絕不能影響任何被記錄的流程 */ }
+}
+function getPetDiagLog_() { return _petDiagLog_.slice(); }
 let petShopTxBusy_ = false; // 目前是否有一筆購買或穿戴請求在飛行中（買/穿戴共用同一把鎖，鎖住所有按鈕）
 let petShopTxKind_ = null; // 'buy' | 'equip' | null，只用來畫「購買中…」/「穿戴中…」文字
 let petShopTxTargetId_ = null; // 飛行中那筆請求的 accessory_id，只用來畫文字
@@ -3512,11 +3527,21 @@ function getPetEconomyDataSingleFlight_(childId, options = {}) {
     return Promise.resolve({ ok: true, result: cached.result, from_cache: true });
   }
 
+  const _diagT0 = Date.now();
   const promise = callPhase2A('getPetEconomyData', { childId }).then(function (res) {
-    if (res.ok && validatePetEconomyResult_(res.result)) {
-      _petEconomyCache_[childId] = { result: res.result, confirmedAt: Date.now() };
+    // P-Incident20260922 R2 修正：callPhase2A 在收到格式異常的回應（例如後端回傳
+    // 純 JSON null）時不會 throw，而是把 res.json() 解析出來的值原封不動傳回——
+    // 這裡如果直接讀 res.ok 會拋例外，讓這個共用單飛 promise 整個 reject，波及所有
+    // 正在等它的呼叫端（進頁、開商店、背景 tick 全部共用同一個 promise）。統一在
+    // 這一層把非物件／缺 ok 欄位的回應歸一成明確的失敗結果，之後任何呼叫端都只會
+    // 走既有的「讀取失敗」分支，不會再整個 reject。
+    const safeRes = (res && typeof res === 'object') ? res : { ok: false, error: 'invalid_response_shape' };
+    petDiagLog_({ action: 'getPetEconomyData', childId, ms: Date.now() - _diagT0,
+      ok: !!safeRes.ok, error: safeRes.error, force: options.force === true });
+    if (safeRes.ok && validatePetEconomyResult_(safeRes.result)) {
+      _petEconomyCache_[childId] = { result: safeRes.result, confirmedAt: Date.now() };
     }
-    return res;
+    return safeRes;
   }).finally(function () {
     if (_petEconomyRequests_[childId] && _petEconomyRequests_[childId].promise === promise) {
       delete _petEconomyRequests_[childId];
@@ -3673,11 +3698,28 @@ function resetPetAccessoryEquipState_() {
   refreshPetZoomAccessory_();
 }
 
+// P-Incident20260922 R2 修正：回傳值從「沒有回傳值」改成明確的 { applied, reason }。
+// 呼叫端（manualRefreshChild() 等）需要知道「這一次呼叫」有沒有真的套用成功，不能靠
+// 事後檢查 petShopLastResult_ 是否有效來推論——petShopLastResult_ 可能是更早一次
+// 成功呼叫留下的舊資料，這次真的逾時／失敗也不會被清掉（見 resetPetAccessoryEquipState_
+// 只在「不合法格式」分支呼叫，逾時等 isPhase2ATransportError_ 的情況目前也走同一支，
+// 但不代表這次成功，仍必須回報 applied:false）。
 async function refreshPetAccessoryEquipState_(childId, options = {}) {
   const readSeq = ++petEconomyReadSeq_;
   const res = await getPetEconomyDataSingleFlight_(childId, options);
-  if (currentChild !== childId || readSeq !== petEconomyReadSeq_) return; // 舊孩子／舊請求不得覆蓋新狀態
-  if (!res.ok || !validatePetEconomyResult_(res.result)) { resetPetAccessoryEquipState_(); return; }
+  if (currentChild !== childId || readSeq !== petEconomyReadSeq_) {
+    const reason = currentChild !== childId ? 'child-switched' : 'superseded-by-newer-read';
+    petDiagLog_({ action: 'getPetEconomyData', source: 'accessoryEquipState', childId, applied: false, reason });
+    return { applied: false, reason }; // 舊孩子／舊請求不得覆蓋新狀態
+  }
+  if (!res.ok || !validatePetEconomyResult_(res.result)) {
+    const reason = 'response-not-ok-or-invalid';
+    petDiagLog_({ action: 'getPetEconomyData', source: 'accessoryEquipState', childId, applied: false,
+      reason, error: res.error });
+    resetPetAccessoryEquipState_();
+    return { applied: false, reason, error: res.error };
+  }
+  petDiagLog_({ action: 'getPetEconomyData', source: 'accessoryEquipState', childId, applied: true });
   petShopLastResult_ = res.result;
   // getPetEconomyData 已經通過完整格式驗證，而且上方也確認這仍是目前孩子的
   // 最新回應。把同一份後端權威餘額同步到孩子頁頂端，避免森林夥伴商店已顯示
@@ -3690,6 +3732,7 @@ async function refreshPetAccessoryEquipState_(childId, options = {}) {
   // renderForestPet() 會先建立背包並顯示載入提示；economy 非同步回來後必須
   // 主動重畫食物區塊，否則資料雖然已成功讀到，畫面仍會一直停在「正在讀取」。
   if (currentSubTab === 'forestpet') renderPetFood();
+  return { applied: true };
 }
 
 async function refreshPetEconomyAfterMutation_(childId) {
@@ -3779,7 +3822,11 @@ async function refreshPetShop_() {
   const hadCachedResult = !!petShopLastResult_;
   if (!hadCachedResult) statusEl.textContent = '載入中…';
   const res = await getPetEconomyDataSingleFlight_(childId, { force: true });
-  if (currentChild !== childId || readSeq !== petEconomyReadSeq_) return false;
+  if (currentChild !== childId || readSeq !== petEconomyReadSeq_) {
+    petDiagLog_({ action: 'getPetEconomyData', source: 'petShop', childId, applied: false,
+      reason: currentChild !== childId ? 'child-switched' : 'superseded-by-newer-read' });
+    return false;
+  }
   // 等待網路期間森林夥伴可能因驚喜樹／loadAll 刷新而重建 DOM。後續一定要重新
   // 取得目前畫面上的元素，不能把結果寫進已被移除的舊 modal。
   statusEl = document.getElementById('pet-shop-status');
@@ -3800,8 +3847,11 @@ async function refreshPetShop_() {
       // 更新沒有成功，商店按鈕邏輯完全不受影響（petShopTxBusy_ 等狀態沒有被動到）。
       statusEl.textContent = '⚠️ 更新失敗（' + reason + '），目前顯示的是上次讀到的資料。';
     }
+    petDiagLog_({ action: 'getPetEconomyData', source: 'petShop', childId, applied: false,
+      reason: 'response-not-ok-or-invalid', error: res.error });
     return false;
   }
+  petDiagLog_({ action: 'getPetEconomyData', source: 'petShop', childId, applied: true });
   petShopLastResult_ = res.result;
   applyPetAccessoryTruth_(childId, res.result.equipped_accessory_id || '');
   reconcilePetPendingWithTruth_(childId, res.result);
@@ -6005,22 +6055,132 @@ function petBath() {
 }
 
 // 孩子端：手動立即更新按鈕
+// P-Incident20260922 候選（未部署）：診斷 wrapping——在不改動 refreshPetStatusOnly_／
+// refreshTreeStatus_ 內部任何邏輯、不改變它們的回傳值／單飛／逾時行為的前提下，從外層
+// 記一筆「這個 action 花了多久、結果是什麼」。因為原函式本身有自己的 per-child 單飛
+// （同一個 childId 短時間內多次呼叫會共用同一個 in-flight promise），這裡外層 wrap 每次
+// 呼叫都會各自記一筆——不是每筆都代表一次真的網路請求，而是代表「這個呼叫點在這個時間點
+// 問過一次」，兩者合起來看才能完整回答「卡在哪一步」。
+(function installPetDiagWrappers_() {
+  const _origRefreshPetStatusOnly_ = refreshPetStatusOnly_;
+  refreshPetStatusOnly_ = async function (childId, options) {
+    const t0 = Date.now();
+    let outcome;
+    try {
+      outcome = await _origRefreshPetStatusOnly_(childId, options);
+      return outcome;
+    } finally {
+      petDiagLog_({ action: 'getPetStatus', childId, reason: options && options.reason,
+        ms: Date.now() - t0, ok: outcome ? outcome.ok : undefined, error: outcome ? outcome.error : 'threw' });
+    }
+  };
+  const _origRefreshTreeStatus_ = refreshTreeStatus_;
+  refreshTreeStatus_ = async function (childId, options) {
+    const t0 = Date.now();
+    let outcome;
+    let threw = false;
+    try {
+      outcome = await _origRefreshTreeStatus_(childId, options);
+      return outcome;
+    } catch (e) {
+      threw = true;
+      throw e;
+    } finally {
+      // R2 修正：原本只記 ok:true/false，逾時（status='error'）跟格式不合法
+      // （status='blocked'，訊息含「格式無法確認」）在紀錄上長得一樣，看不出
+      // 卡在哪一種。這裡額外把 getTreeState_ 的 status／message 一起記下來——
+      // 只是讀取既有狀態物件，不改變 refreshTreeStatus_ 本身的邏輯或回傳值。
+      const state = getTreeState_(childId);
+      petDiagLog_({ action: 'getTreeStatus', childId, reason: options && options.reason,
+        ms: Date.now() - t0, ok: outcome === true, silent: options && options.silent === true,
+        threw: threw, status: state.status, message: state.message });
+    }
+  };
+})();
+
+// R2 修正（覆核打回後重寫）：五個問題一起修。
+// (1) economyLoaded 現在讀 refreshPetAccessoryEquipState_() 這次呼叫真正回傳的
+//     { applied, reason }，不再事後檢查 petShopLastResult_ 是否「目前看起來有效」——
+//     舊資料在真正失敗時不一定會被清掉，用快取狀態反推「這次成功了」是誤報的根源。
+// (2) 整個函式包在 try/catch/finally 裡：任何一步拋例外（包含格式異常的回應）都會被
+//     finally 接住，按鈕一定會恢復可按、一定會有明確的失敗提示，不會永久卡在「更新中」。
+// (3)(4) 用世代計數器 manualRefreshGen_ 標記「目前有效的那一次呼叫」：按第二次時世代
+//     前進，較舊那次呼叫的 finally 發現自己已經不是最新世代就完全不去動按鈕／提示，避免
+//     先完成的舊呼叫提前解鎖按鈕、蓋掉還在等待的新呼叫。同時在進入樹／經濟資料這一步之前
+//     與最終顯示提示之前都重新檢查孩子與分頁是否仍是當初按下按鈕時的狀態——切孩子或切分頁
+//     後，舊流程既不會再對舊分頁的孩子發樹／經濟請求，也不會在新畫面上彈出屬於舊流程的提示。
+// (5) 樹／經濟兩邊的失敗原因（逾時／格式不合法／因切孩子、切分頁或按第二次而跳過）都記到
+//     petDiagLog_，不再只記「ok:false」。
+// R3 修正（覆核再打回一次）：原本只檢查 currentChild，沒檢查 currentSubTab——同一個孩子
+// 在寵物身分回應還沒回來前切去別的分頁（例如菜單），因為孩子沒變，原本的檢查會誤判成
+// 「還在森林夥伴頁」，繼續對已經離開的分頁發 getTreeStatus／getPetEconomyData，最後還在
+// 新分頁跳出「已更新最新資料」。這裡額外記住按下按鈕當下的分頁 startSubTab，後續所有判斷
+// 都同時比對孩子與分頁；只補這一個缺口，不動其他既有邏輯。
+let manualRefreshGen_ = 0;
 async function manualRefreshChild() {
+  const myGen = ++manualRefreshGen_;
   const btn = document.getElementById('refresh-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '🔄 更新中...'; }
-  const petPage = currentSubTab === 'forestpet';
-  const petOutcome = petPage
-    ? await refreshPetStatusOnly_(currentChild, { reason: 'manual-refresh', cancelPrevious: true })
-    : null;
-  const loaded = petPage
-    ? petOutcome.ok
-    : await loadChildSection_(currentSubTab, currentChild, { reason: 'manual-refresh', force: true });
+  const childId = currentChild;
+  const startSubTab = currentSubTab;
+  const petPage = startSubTab === 'forestpet';
+  const stillOnSamePage_ = () => currentChild === childId && currentSubTab === startSubTab;
+  let loaded = false;
   let treeLoaded = true;
-  if (loaded && currentSubTab === 'forestpet' && classifyServerPet_(allData[currentChild]).kind === 'present') {
-    treeLoaded = await refreshTreeStatus_(currentChild, { reason: 'manual-refresh' });
+  let economyLoaded = true;
+  try {
+    const petOutcome = petPage
+      ? await refreshPetStatusOnly_(childId, { reason: 'manual-refresh', cancelPrevious: true })
+      : null;
+    loaded = petPage
+      ? !!(petOutcome && petOutcome.ok)
+      : await loadChildSection_(startSubTab, childId, { reason: 'manual-refresh', force: true });
+
+    if (myGen !== manualRefreshGen_) {
+      petDiagLog_({ action: 'manualRefreshChild', childId, applied: false, reason: 'superseded-by-newer-press' });
+      return; // 使用者又按了一次，這次呼叫讓給最新那次；finally 也不會動按鈕/提示
+    }
+
+    // P-Incident20260922 候選：手動「重新載入確認」原本只會刷新寵物身分與驚喜樹，完全
+    // 不會刷新 EXP／背包／商店資料（getPetEconomyData），按了也救不回這部分卡住的畫面。
+    // 這裡補上，兩者互不依賴彼此結果，用 Promise.all 平行送出，不比原本的循序寫法慢。
+    // economy 這條路一樣會搶 getPetEconomyData／getTreeStatus 共用的後端鎖，跟背景 30 秒
+    // tick／開商店重疊時一樣可能撞上既有的 petEconomyReadSeq_ 競態（這輪不改那個機制），
+    // 不能宣稱對其他功能零影響；但因為 getPetEconomyDataSingleFlight_ 本身有 per-child
+    // 單飛，使用者連續按這顆按鈕不會疊加成多筆重複請求（見候選測試 B4）。
+    if (loaded && petPage && stillOnSamePage_() && classifyServerPet_(allData[childId]).kind === 'present') {
+      const [treeOutcome, economyOutcome] = await Promise.all([
+        refreshTreeStatus_(childId, { reason: 'manual-refresh' }),
+        refreshPetAccessoryEquipState_(childId, { force: true }),
+      ]);
+      treeLoaded = treeOutcome === true;
+      economyLoaded = !!(economyOutcome && economyOutcome.applied === true);
+      if (!treeLoaded || !economyLoaded) {
+        petDiagLog_({ action: 'manualRefreshChild', childId, applied: false, reason: 'tree-or-economy-not-applied',
+          treeLoaded: treeLoaded, economyReason: economyOutcome && economyOutcome.reason });
+      }
+    } else if (loaded && petPage && !stillOnSamePage_()) {
+      // 等待身分確認期間使用者已經切走孩子或切走分頁：不對舊分頁的孩子多送樹／經濟
+      // 請求，也不能用「還沒讀」冒充「讀失敗」——這次呼叫直接視為跟目前畫面無關。
+      const reason = currentChild !== childId ? 'child-switched-before-tree-economy' : 'page-switched-before-tree-economy';
+      petDiagLog_({ action: 'manualRefreshChild', childId, applied: false, reason });
+    }
+  } catch (e) {
+    loaded = false;
+    petDiagLog_({ action: 'manualRefreshChild', childId, applied: false, reason: 'exception',
+      error: String((e && e.message) || e) });
+  } finally {
+    if (myGen === manualRefreshGen_) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '🔄 立即更新'; }
+      // 舊流程的按鈕已在上面恢復（按鈕是全域共用元件，不恢復會永久卡住），但只有
+      // 目前孩子與分頁都仍是當初按下按鈕那時的狀態，才顯示這次結果的提示——避免舊
+      // 流程（不管是切了孩子還是切了分頁）的結果誤導成目前畫面上的訊息。
+      if (stillOnSamePage_()) {
+        const allOk = loaded && treeLoaded && economyLoaded;
+        showToast(allOk ? '✅ 已更新最新資料！' : '⚠️ 部分資料尚未更新，請稍後再試', allOk ? 'success' : 'warn');
+      }
+    }
   }
-  if (btn) { btn.disabled = false; btn.innerHTML = '🔄 立即更新'; }
-  showToast(loaded && treeLoaded ? '✅ 已更新最新資料！' : '⚠️ 部分資料尚未更新，請稍後再試', loaded && treeLoaded ? 'success' : 'warn');
 }
 
 // ── DATA LOAD ──
