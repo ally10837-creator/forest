@@ -1545,6 +1545,11 @@ body.audio-settings-open { overflow: hidden; }
           <span id="interest-rate-msg" style="font-size:12px;color:var(--cocoa-soft);"></span>
         </div>
         <div style="font-size:11px;color:var(--cocoa-soft);margin-top:6px;">目前設定：<span id="interest-rate-current">載入中…</span>　每週一凌晨自動發放</div>
+        <!-- P-PerfAudit20260923 候選：手機端不需要開發者工具就能看到／複製的最小診斷入口。
+             只讀本機記憶體裡的環狀緩衝區，不會另外發任何請求，不含個人資料。 -->
+        <div style="margin-top:8px;">
+          <button onclick="showUiDiagPanel()" style="background:white;border:1px solid var(--cocoa-soft);border-radius:8px;padding:6px 12px;font-family:inherit;font-size:11px;font-weight:700;color:var(--cocoa-soft);cursor:pointer;">📋 查看載入診斷紀錄</button>
+        </div>
       </div>
 
       <!-- 今日情境語音狀態（唯讀檢查，不提供手動更新按鈕；天氣只由每日 06:00 的後端觸發器更新） -->
@@ -1980,6 +1985,162 @@ const _childSectionInFlight_ = new Map();
 const _childSectionLoadedAt_ = new Map();
 let _childSectionRequestSeq_ = 0;
 
+// P-PerfAudit20260923 候選（未部署）：全站最小耗時診斷，只記在記憶體的環狀緩衝區
+// （不上傳、不寫 localStorage/sessionStorage、不影響任何判斷或畫面）。目的是回答
+// 「這次卡住是還沒送出、送出後還在等、逾時、回應失敗、還是成功了但沒套用畫面」，
+// 這裡選擇前端診斷、不等後端記錄，原因是它不需要等後端記錄管道釐清就能立刻提供
+// 部分可見度（2026-09-23 覆核後更正：`clasp logs` 這次讀取失敗只證實「這個特定
+// 工具管道這次讀不到」，不能直接推論成「Apps Script Executions 面板本身完全不可
+// 讀」——Google 官方把內建 Executions 面板、簡化 Cloud 記錄、連結標準 GCP 專案後
+// 的完整 Cloud Logging 存取列為三種不同機制，`clasp logs` 只是走了第三種；本輪沒
+// 有另外去 Apps Script 編輯器確認前兩種路線是否可讀，也不建議為了這件事貿然去
+// 連結新的標準 GCP 專案——沿用 Gate 0 階段已經有的立場，這裡只是先做一個不依賴
+// 任何後端記錄結論的獨立補強，不是宣稱前端診斷是唯一可行方法）。
+// 刻意不記 childId／URL／deployment／token／PIN／salt／requestId／完整回應內容，
+// 只記「哪個功能」「目前是什麼階段」「花了多久」「錯誤類型」——比照既有
+// petDiagLog_（index.html 內寵物流程診斷）的隱私排除原則。
+const UI_DIAG_LOG_MAX_ = 40;
+const _uiDiagLog_ = [];
+let _uiDiagSeq_ = 0;
+function uiDiagLog_(entry) {
+  try {
+    entry.t = new Date().toISOString();
+    // P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：本機遞增序號，不含任何身分
+    // 資訊，純粹讓看診斷紀錄的人可以確認「有沒有漏掉」——例如環狀緩衝區被擠掉的
+    // 舊紀錄，序號會出現跳號，而不是一個沒有任何線索的空白。
+    entry.seq = ++_uiDiagSeq_;
+    _uiDiagLog_.push(entry);
+    if (_uiDiagLog_.length > UI_DIAG_LOG_MAX_) _uiDiagLog_.shift();
+    return entry; // 回傳同一個物件參考，讓呼叫端之後可以直接改它的欄位（見下方用法）
+  } catch (e) { return {}; /* 診斷本身絕不能影響任何被記錄的流程 */ }
+}
+function getUiDiagLog_() { return _uiDiagLog_.slice(); }
+
+// P-PerfAudit20260923 候選（2026-09-23 覆核後修正：原本依「錯誤物件的 type」分類，
+// 這裡改成依「執行到哪個階段」分類）：
+// 原本用 error.name==='TypeError' 一律歸成 network，但 TypeError 不是網路專屬的錯誤
+// 類型——回應不是合法 JSON 時 response.json() 丟的是 SyntaxError（原本的規則接不住，
+// 掉進 unknown）；套用到畫面時（例如 renderSubTab 內部）如果程式邏輯本身有 bug，
+// 丟出來的也常常是 TypeError（例如對 undefined 取屬性），原本的規則會把這種畫面
+// 套用錯誤誤判成網路錯誤。改成呼叫端先自己追蹤「現在執行到 fetch／格式驗證／套用
+// 畫面 這三個階段的哪一個」，分類直接依階段決定，不再看錯誤物件本身的 type：
+//   'network' — 還在 fetch 階段就失敗（含 AbortError／逾時、DNS／離線等 TypeError）
+//   'format'  — fetch 已經回應，但 response.json() 解析失敗，或回應格式／內容驗證不通過
+//               （包含我們自己丟出的 invalid_xxx_response）——不管實際的 JS 錯誤物件
+//               是 SyntaxError 還是我們自己的 Error，只要是在這個階段失敗都算 format
+//   'apply'   — 回應已經成功解析＋驗證過，但後續合併資料或重繪畫面時失敗
+//   'unknown' — stage 資訊遺失或不是上述三種情況時的保底分類
+function classifyDiagError_(error, stage) {
+  if (stage === 'apply') return 'apply';
+  if (stage === 'format') return 'format';
+  if (stage === 'network') {
+    if (!error) return 'unknown';
+    if (error.name === 'AbortError' || error.name === 'TypeError') return 'network';
+    return 'unknown';
+  }
+  return 'unknown';
+}
+
+// P-PerfAudit20260923 候選：手機端不需要開發者工具就能看到／複製診斷紀錄的最小
+// 入口——只讀 getUiDiagLog_()，不會另外發任何網路請求。複製優先用
+// navigator.clipboard，不支援時退回 execCommand('copy')，兩者都失敗時明確提示
+// 「請手動選取複製」，不會讓使用者卡在看起來按了沒反應的狀態。
+// （2026-09-23 覆核後修正）原本用一段 innerHTML 字串產生子元素，再靠
+// document.getElementById(id) 找回這些子元素——這在真的瀏覽器裡可以動，但沒辦法
+// 用離線測試真的驗證「開啟→關閉→再開啟」「複製成功／失敗」這些互動，因為
+// innerHTML 字串不會被離線測試的 DOM 替身解析成可以查詢的節點。改成用
+// document.createElement 逐一建立子元素、直接保留住每個元素的參考
+// （_uiDiagPanelEls_，只建立一次、重複使用），不再需要事後用 id 反查——這樣寫
+// 在真的瀏覽器裡行為不變，離線測試也能直接驗證這些互動。
+let _uiDiagPanelEls_ = null;
+
+function buildUiDiagPanel_() {
+  const modal = document.createElement('div');
+  modal.id = 'ui-diag-modal';
+  modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;padding:16px;';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:white;border-radius:12px;padding:16px;max-width:480px;width:100%;max-height:80vh;display:flex;flex-direction:column;gap:8px;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'font-weight:800;font-size:14px;';
+  title.textContent = '📋 診斷紀錄（最近 ' + UI_DIAG_LOG_MAX_ + ' 筆）';
+
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:11px;color:#888;';
+  note.textContent = '只記錄功能名稱、階段、耗時與錯誤類型，不含孩子身分、網址或密碼。';
+
+  const textarea = document.createElement('textarea');
+  textarea.id = 'ui-diag-textarea';
+  textarea.readOnly = true;
+  textarea.setAttribute('readonly', 'readonly');
+  textarea.style.cssText = 'flex:1;min-height:200px;font-family:monospace;font-size:11px;padding:8px;border:1px solid #ccc;border-radius:8px;';
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;';
+  const copyBtn = document.createElement('button');
+  copyBtn.id = 'ui-diag-copy-btn';
+  copyBtn.textContent = '複製';
+  copyBtn.style.cssText = 'flex:1;padding:10px;border-radius:8px;border:none;background:var(--mango);font-weight:700;cursor:pointer;';
+  const closeBtn = document.createElement('button');
+  closeBtn.id = 'ui-diag-close-btn';
+  closeBtn.textContent = '關閉';
+  closeBtn.style.cssText = 'flex:1;padding:10px;border-radius:8px;border:1px solid #ccc;background:white;cursor:pointer;';
+  btnRow.appendChild(copyBtn);
+  btnRow.appendChild(closeBtn);
+
+  const statusEl = document.createElement('div');
+  statusEl.id = 'ui-diag-copy-status';
+  statusEl.style.cssText = 'font-size:12px;color:#52c49a;min-height:16px;';
+
+  box.appendChild(title);
+  box.appendChild(note);
+  box.appendChild(textarea);
+  box.appendChild(btnRow);
+  box.appendChild(statusEl);
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+
+  copyBtn.addEventListener('click', copyUiDiagLog_);
+  closeBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+
+  return { modal, textarea, copyBtn, closeBtn, statusEl };
+}
+
+function showUiDiagPanel() {
+  if (!_uiDiagPanelEls_) _uiDiagPanelEls_ = buildUiDiagPanel_();
+  const { modal, textarea, statusEl } = _uiDiagPanelEls_;
+  textarea.value = JSON.stringify(getUiDiagLog_(), null, 2);
+  statusEl.textContent = ''; statusEl.style.color = '#52c49a';
+  modal.style.display = 'flex';
+}
+
+function closeUiDiagPanel() {
+  if (_uiDiagPanelEls_) _uiDiagPanelEls_.modal.style.display = 'none';
+}
+
+async function copyUiDiagLog_() {
+  if (!_uiDiagPanelEls_) return;
+  const { textarea, statusEl } = _uiDiagPanelEls_;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(textarea.value);
+      if (statusEl) { statusEl.textContent = '✅ 已複製'; statusEl.style.color = '#52c49a'; }
+      return;
+    }
+    throw new Error('clipboard_api_unavailable');
+  } catch (e) {
+    try {
+      textarea.focus(); textarea.select();
+      const ok = document.execCommand('copy');
+      if (!ok) throw new Error('execCommand_failed');
+      if (statusEl) { statusEl.textContent = '✅ 已複製'; statusEl.style.color = '#52c49a'; }
+    } catch (e2) {
+      if (statusEl) { statusEl.textContent = '⚠️ 自動複製失敗，請手動選取上方文字複製'; statusEl.style.color = '#e6483c'; }
+    }
+  }
+}
+
 function childSectionKey_(childId, section) { return childId + ':' + section; }
 function childSectionCacheKey_(childId, section) { return 'forest_child_section_v1_' + childId + '_' + section; }
 
@@ -2065,6 +2226,35 @@ function showChildSectionLoadingPlaceholder_(section) {
   }
 }
 
+// P-PerfAudit20260923 候選：失敗時（這個孩子／這個分頁在本次瀏覽從未成功載入過）
+// 把 showChildSectionLoadingPlaceholder_ 設的「正在載入…」換成明確的「載入失敗」——
+// 上方已經有 setChildSectionStatus_ 顯示的警示橫幅說明原因，這裡只負責把內容區塊本身
+// 也換成看得出「這不是還在跑，是失敗了」的文字，不重新設計版面、不改變任何判斷邏輯。
+function showChildSectionLoadFailedPlaceholder_(section) {
+  if (section === 'menu') {
+    const count = document.getElementById('menu-count');
+    const grid = document.getElementById('menu-grid');
+    if (count) count.textContent = '—';
+    if (grid) grid.innerHTML = '<div class="empty">🍽️ 載入失敗，請稍後重試</div>';
+  } else if (section === 'chores') {
+    const count = document.getElementById('chore-count');
+    const list = document.getElementById('chore-list');
+    if (count) count.textContent = '—';
+    if (list) list.innerHTML = '<div class="empty">🦊 載入失敗，請稍後重試</div>';
+  } else if (section === 'orders') {
+    const list = document.getElementById('orders-list');
+    if (list) list.innerHTML = '<div class="empty">🧾 載入失敗，請稍後重試</div>';
+  } else if (section === 'penalty') {
+    const count = document.getElementById('penalty-count');
+    const list = document.getElementById('penalty-list');
+    if (count) count.textContent = '—';
+    if (list) list.innerHTML = '<div class="empty">🐼 載入失敗，請稍後重試</div>';
+  } else if (section === 'bank') {
+    const summary = document.getElementById('bank-summary');
+    if (summary) summary.innerHTML = '<div class="empty">🏦 載入失敗，請稍後重試</div>';
+  }
+}
+
 function renderChildSectionIfCurrent_(childId, section) {
   if (currentChild !== childId || currentSubTab !== section) return;
   renderSubTab(section);
@@ -2073,7 +2263,13 @@ function renderChildSectionIfCurrent_(childId, section) {
 async function loadChildSection_(section, childId = currentChild, options = {}) {
   if (!CHILD_SECTION_IDS.includes(section) || !MEMBERS[childId]) return false;
   const key = childSectionKey_(childId, section);
-  if (_childSectionInFlight_.has(key)) return _childSectionInFlight_.get(key);
+  if (_childSectionInFlight_.has(key)) {
+    // P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：這次呼叫沒有真的另外發出
+    // 請求，是直接沿用一個已經在飛行中的既有請求——如果不記一筆，診斷紀錄裡完全
+    // 看不到這次呼叫發生過，容易被誤判成「根本沒被觸發」。
+    uiDiagLog_({ action: 'getChildSection', section, phase: 'joined-inflight' });
+    return _childSectionInFlight_.get(key);
+  }
 
   const task = (async () => {
     const cached = readChildSectionCache_(childId, section);
@@ -2089,6 +2285,11 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     }
 
     if (cacheFresh && !options.force) {
+      // P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：這次呼叫因為 sessionStorage
+      // 快取還沒過期而完全沒有發出網路請求——同樣需要記一筆，理由跟上面的
+      // joined-inflight 一樣：不記錄的話，「快取命中所以沒發請求」跟「還沒被呼叫過」
+      // 在診斷紀錄上會看起來一模一樣（都是找不到這個 action 的紀錄）。
+      uiDiagLog_({ action: 'getChildSection', section, phase: 'cache-hit' });
       setChildSectionStatus_(section, '', 'info');
       return true;
     }
@@ -2097,27 +2298,71 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     const controller = new AbortController();
     let timedOut = false;
     const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, CHILD_SECTION_TIMEOUT_MS);
+    // P-PerfAudit20260923 候選：送出當下先記一筆 phase:'sent'，之後不管走哪個分支
+    // 都會回頭把同一個物件的欄位補上——中途如果去看 getUiDiagLog_()，會看到這筆還
+    // 停在 'sent'，就是「已發出、還在等」；成功／逾時／錯誤各自的分支再補上真正的
+    // 結果，不需要另外猜。
+    const _diagT0 = Date.now();
+    const _diagEntry = uiDiagLog_({ action: 'getChildSection', section, phase: 'sent' });
+    // P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：分類失敗原因時改用「現在執行
+    // 到哪個階段」而不是「錯誤物件本身是什麼 type」——見 classifyDiagError_ 的說明，
+    // 同一種 JS 錯誤型別（例如 TypeError）在 fetch 階段代表網路問題，在套用畫面階段
+    // 卻可能是程式邏輯本身的 bug，不能只看 type 判斷。
+    let _diagStage = 'network';
     try {
       const url = API + '?action=getChildSection&childId=' + encodeURIComponent(childId) +
         '&section=' + encodeURIComponent(section);
       const response = await fetch(url, { signal: controller.signal });
+      _diagStage = 'format';
       const result = await response.json();
       if (!result || result.success !== true || result.childId !== childId ||
           result.section !== section || !result.data || typeof result.data !== 'object') {
         throw new Error('invalid_section_response');
       }
-      if (requestId !== _childSectionRequestSeq_ && currentChild !== childId) return false;
+      if (requestId !== _childSectionRequestSeq_ && currentChild !== childId) {
+        _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.applied = false;
+        _diagEntry.reason = 'superseded-or-child-switched';
+        return false;
+      }
+      _diagStage = 'apply';
       mergeChildSectionData_(childId, section, result.data);
       writeChildSectionCache_(childId, section, result.data);
       setChildSectionStatus_(section, '', 'info');
+      const willRender = currentChild === childId && currentSubTab === section;
       renderChildSectionIfCurrent_(childId, section);
+      _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.applied = willRender;
+      if (!willRender) _diagEntry.reason = 'child-or-tab-switched-away';
       return true;
     } catch (error) {
       const stillHasData = hasChildSectionData_(childId, section);
-      const message = timedOut || error?.name === 'AbortError'
+      const isTimeout = timedOut || error?.name === 'AbortError';
+      const message = isTimeout
         ? (stillHasData ? '伺服器回應較慢，先顯示上次資料' : '伺服器回應較慢，請稍後重試')
         : (stillHasData ? '暫時無法更新，先顯示上次資料' : '暫時無法載入，請稍後重試');
-      setChildSectionStatus_(section, message, 'warn');
+      // P-PerfAudit20260923 候選（2026-09-23 覆核後修正：這裡原本有一個新增回歸）：
+      // 警示橫幅（setChildSectionStatus_）跟失敗態內容（showChildSectionLoadFailedPlaceholder_）
+      // 寫入的都是以 section 命名、所有孩子共用的同一個 DOM 節點（#chore-list 等不分孩子）。
+      // 如果這個請求還在飛行時使用者已經切到另一個孩子、而那個孩子這個分頁已經成功顯示
+      // 資料，這裡如果不檢查「目前畫面顯示的孩子／分頁是不是還是這次請求原本要處理的
+      // 那個」，就會用 A 孩子的失敗結果去蓋掉 B 孩子已經正確顯示的畫面——只在目前顯示的
+      // 仍然是這次請求的孩子＋分頁時，才更新橫幅／內容；不是的話，這次失敗只記診斷，
+      // 不動任何畫面（B 孩子的資料跟 UI 完全不受 A 孩子這次失敗影響）。
+      const isCurrentTarget = currentChild === childId && currentSubTab === section;
+      if (isCurrentTarget) {
+        setChildSectionStatus_(section, message, 'warn');
+        // 修正 Q2 的根因：失敗時，如果這個孩子／這個分頁從來沒有成功載入過
+        // （stillHasData 為否），原本只更新上面那一行警示橫幅，
+        // showChildSectionLoadingPlaceholder_ 設的「正在載入…」內容跟數量標籤完全沒被
+        // 動過，畫面就停在「已經顯示逾時警示，但內容還是正在載入」——這裡補上明確的
+        // 失敗態，只在原本就會顯示 placeholder 的情境（!stillHasData）才動，已有資料
+        // 時維持原行為（警示橫幅＋保留舊資料，不動內容區塊）。
+        if (!stillHasData) showChildSectionLoadFailedPlaceholder_(section);
+      }
+      _diagEntry.phase = isTimeout ? 'timeout' : 'error';
+      _diagEntry.ms = Date.now() - _diagT0;
+      _diagEntry.errorCode = isTimeout ? 'network' : classifyDiagError_(error, _diagStage);
+      _diagEntry.applied = isCurrentTarget;
+      if (!isCurrentTarget) _diagEntry.reason = 'child-or-tab-switched-away';
       return false;
     } finally {
       clearTimeout(timeoutId);
@@ -2282,7 +2527,19 @@ function showPage(page) {
   document.getElementById(page + '-page').classList.add('active');
   document.getElementById('nav-child').classList.toggle('active', page === 'child');
   document.getElementById('nav-mama').classList.toggle('active',  page === 'mama');
-  if (page === 'mama' && mamaUnlocked) loadMamaTab(currentMamaTab);
+  if (page === 'mama' && mamaUnlocked) {
+    loadMamaTab(currentMamaTab);
+    // P-PerfAudit20260923 候選：重新進入已解鎖的媽媽頁要恢復背景輪詢——
+    // startMamaAutoRefresh() 本身第一行就是 stopMamaAutoRefresh()，重複呼叫是安全的、
+    // 不會疊出第二個 timer。首次進站（PIN 還沒輸入、mamaUnlocked 還是 false）不會走
+    // 到這裡，仍然是 checkPin() 自己呼叫 startMamaAutoRefresh()，這裡沒有動那段。
+    startMamaAutoRefresh();
+  } else {
+    // P-PerfAudit20260923 候選：只要目前顯示的不是媽媽頁（或還沒解鎖），就不該有
+    // 背景輪詢在跑——原本只有 startMamaAutoRefresh() 內部會重設 timer，沒有任何
+    // 地方在離開媽媽頁時主動停止過，這裡補上。
+    stopMamaAutoRefresh();
+  }
   if (page === 'child') {
     updateCartFab();
     switchSubTab(currentSubTab, true);
@@ -2353,6 +2610,14 @@ function renderSubTab(tab, options = {}) {
   if (tab === 'forestpet') { renderForestPet(data || {}); return; }
   // 「尚未載入」不等於「真的是 0 筆」；只有分區 API 成功後才能進入空清單判斷。
   if (!data || !hasChildSectionData_(currentChild, tab)) {
+    if (tab === 'bank') {
+      // P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：銀行分頁的利率請求要等
+      // 帳本資料先成功合併過一次才會被觸發（見下方 renderBank／updateBankRateBoard）。
+      // 這裡記一筆「還在等前置帳本」，讓看診斷紀錄的人不會把「利率請求還沒發出」
+      // 誤判成「利率功能忘記呼叫」——原因很明確：帳本本身還沒有資料，不是利率
+      // 這條路徑自己卡住。
+      uiDiagLog_({ action: 'getSetting', section: 'bank-rate', phase: 'waiting-on-ledger' });
+    }
     showChildSectionLoadingPlaceholder_(tab);
     return;
   }
@@ -7499,11 +7764,20 @@ async function fetchMamaReviewSnapshot_(options = {}) {
   finally { if (!options.declareId && mamaReviewRefreshInFlight_ === run) mamaReviewRefreshInFlight_ = null; }
 }
 
+// P-PerfAudit20260923 候選：補上跟孩子端背景 30 秒 tick（backgroundChildTick_）
+// 同樣的雙重閘門——瀏覽器分頁是否隱藏（document.hidden）、以及媽媽頁目前是不是
+// 真的顯示中（#mama-page 是否有 active）。原本只檢查 currentMamaTab 這個子分頁
+// 記憶變數，家長只要按過一次「返回點餐」或把瀏覽器分頁切到背景，這個輪詢完全
+// 不會停，會一直對後端發請求到整頁重新整理為止；這裡只加開關條件，不改變輪詢
+// 本身原本要做的事（fetchMamaReviewSnapshot_／loadAll 的呼叫方式、頻率都不變）。
 function startMamaAutoRefresh() {
   stopMamaAutoRefresh();
 
   // 每30秒重新載入資料
   mamaRefreshTimer = setInterval(async () => {
+    if (document.hidden) return;
+    const mamaPageEl = document.getElementById('mama-page');
+    if (!mamaPageEl || !mamaPageEl.classList.contains('active')) return;
     // 只在審核和訂單頁自動刷新（避免打斷編輯中的菜單/家事/處罰）
     if (currentMamaTab === 'approve' || currentMamaTab === 'orders') {
       if (currentMamaTab === 'approve') await fetchMamaReviewSnapshot_({ renderIfChanged:true });
@@ -8316,19 +8590,60 @@ function updateBirthdayFab() {
 
 // ══════════════════════════════════════════════════════════════
 
+// P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：原本 updateBankRateBoard 用
+// parseFloat(data.value) 加上 Number.isFinite 檢查，看似有驗證，但 parseFloat 對
+// "0.03garbage" 這種後面帶垃圾字元的字串一樣會傳回 0.03，Number.isFinite 檢查的是
+// 「已經解析出來的數字」本身合不合法，不是原始字串合不合法，所以這種格式錯誤的
+// 回應會被誤判成合法的 3% 並寫入快取。這裡改成先用嚴格格式規則檢查整個字串
+// （只能是非負數字面量，可以有小數點，不能有其他字元），確認「回應本身就是一個
+// 乾淨的數字」，不是「剛好能從開頭解析出一個數字」，再回傳 parseFloat 的結果；
+// 不合法一律回傳 null，呼叫端一律以拋出 invalid_xxx_response 處理，跟其他格式
+// 錯誤走同一套分類（見 classifyDiagError_）。
+function parseValidRate_(raw) {
+  if (raw === null || raw === undefined) return null;
+  const str = String(raw).trim();
+  if (!/^\d+(\.\d+)?$/.test(str)) return null;
+  const parsed = parseFloat(str);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 // ── 利率設定 ──
+// P-PerfAudit20260923 候選：補上跟 loadChildSection_ 一致的逾時保護，避免請求
+// 卡住不 settle 時，這裡的 await 也跟著永遠不會恢復。
+// （2026-09-23 覆核後修正）原本失敗或格式不合法時的行為並不一致：`data.value || 0.02`
+// 會讓「後端沒回這個值」「回傳空字串」「回傳 0」全部靜默地當成 2% 顯示成功，跟
+// updateBankRateBoard 已經改過的「不確定就不要冒充」原則矛盾。這裡改用同一支
+// parseValidRate_ 驗證，格式不合法時明確走失敗分支顯示「讀取失敗」，不再有任何
+// 隱性預設值。
 async function loadInterestRate() {
+  const _diagT0 = Date.now();
+  const _diagEntry = uiDiagLog_({ action: 'getSetting', section: 'mama-rate-setting', phase: 'sent' });
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, CHILD_SECTION_TIMEOUT_MS);
+  let _stage = 'network';
   try {
-    const res = await fetch(API + '?action=getSetting&key=interest_rate');
+    const res = await fetch(API + '?action=getSetting&key=interest_rate', { signal: controller.signal });
+    _stage = 'format';
     const data = await res.json();
-    const rate = parseFloat(data.value || 0.02) * 100;
+    const parsed = parseValidRate_(data && data.value);
+    if (parsed === null) throw new Error('invalid_rate_response');
+    const rate = parsed * 100;
+    _stage = 'apply';
     const el = document.getElementById('interest-rate-input');
     const cur = document.getElementById('interest-rate-current');
     if (el) el.value = rate.toFixed(1);
     if (cur) cur.textContent = rate.toFixed(1) + '%';
+    _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.applied = true;
   } catch(e) {
     const cur = document.getElementById('interest-rate-current');
     if (cur) cur.textContent = '讀取失敗';
+    _diagEntry.phase = timedOut ? 'timeout' : 'error';
+    _diagEntry.ms = Date.now() - _diagT0;
+    _diagEntry.errorCode = timedOut ? 'network' : classifyDiagError_(e, _stage);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -8391,50 +8706,119 @@ async function loadWeatherHolidayStatus() {
 }
 
 // ── 銀行利率看板更新 ──
-let cachedRate = null; // 快取利率，避免每次渲染都 fetch
+// P-PerfAudit20260923 候選（依覆核意見修正）：
+// (1) 補上逾時保護，不再讓「fetch 永遠不 settle」變成永久卡住、無法恢復。
+// (2) 失敗時不再把預設 2% 寫進 cachedRate 冒充「已經跟後端確認過的正式利率」——
+//     那樣做有兩個問題：畫面看起來像正常讀到了真實利率（其實不是），而且因為
+//     cachedRate 從此不是 null，之後也不會再重新嘗試，即使之後網路恢復正常、
+//     媽媽也真的改過利率，畫面也永遠不會更新，只會一直顯示那個假的 2%。改成
+//     失敗時明確顯示「尚未確認」，並且刻意不寫入 cachedRate，讓下一次真的進
+//     銀行分頁時還會再試一次——不會無限重試轟炸後端，因為只有使用者真的切換
+//     或重新整理到銀行分頁時才會再呼叫到這裡。
+let cachedRate = null; // null＝還沒跟後端確認過；非 null 一定是真的從後端拿到的值
+// P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：這個利率請求是全站共用的單一
+// 設定（不分孩子），不是像 loadChildSection_ 那樣以 childId+section 為 key 的單飛。
+// 原本沒有任何單飛保護——如果使用者快速切孩子觸發兩次 renderBank，會同時發出兩個
+// 幾乎一樣的 getSetting 請求。這裡補上單一的共用單飛 promise，跟 _childSectionInFlight_
+// 是同一種概念、只是只有一份資源需要保護。
+let _bankRateFetchInFlight_ = null;
 
 async function updateBankRateBoard(childId) {
-  const balance = allData[childId]?.balance ?? 0;
-
-  // 如果還沒有快取就去抓
+  // P-PerfAudit20260923 候選（2026-09-23 覆核後修正）：這個 IIFE 的診斷紀錄只代表
+  // 「共用的 getSetting 請求／cachedRate 快取本身有沒有更新成功」，不代表「這次呼叫
+  // 的畫面有沒有真的套用」——原本在這裡直接寫 applied:true，但這個 entry 是所有共用
+  // 同一次請求的呼叫端（可能是不同孩子）共用的一筆，只有發起或加入這次請求的那些
+  // 呼叫端看得到它，跟每個呼叫端各自「是否把結果畫到自己那次的畫面上」是兩件事——
+  // 例如快取確實成功更新了，但某個呼叫端的孩子這時候已經切走，並沒有真的套用畫面。
+  // 這裡改成只記「快取更新」本身的結果（欄位命名也從 applied 改成 cacheUpdated，
+  // 避免歧義），並把這個 entry 的序號往下傳，讓每個呼叫端自己另外記一筆「畫面套用
+  // 結果」時可以用序號關聯回這次快取更新，不需要記孩子身分。
+  let _cacheEntrySeq = null;
   if (cachedRate === null) {
-    try {
-      const res = await fetch(API + '?action=getSetting&key=interest_rate');
-      const data = await res.json();
-      cachedRate = parseFloat(data.value || 0.02);
-    } catch(e) {
-      cachedRate = 0.02; // 抓失敗就用預設 2%
+    if (!_bankRateFetchInFlight_) {
+      _bankRateFetchInFlight_ = (async () => {
+        const _diagT0 = Date.now();
+        const _diagEntry = uiDiagLog_({ action: 'getSetting', section: 'bank-rate', phase: 'sent' });
+        const controller = new AbortController();
+        let timedOut = false;
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, CHILD_SECTION_TIMEOUT_MS);
+        let _stage = 'network';
+        try {
+          const res = await fetch(API + '?action=getSetting&key=interest_rate', { signal: controller.signal });
+          _stage = 'format';
+          const data = await res.json();
+          const parsed = parseValidRate_(data && data.value);
+          if (parsed === null) throw new Error('invalid_rate_response');
+          cachedRate = parsed;
+          _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.cacheUpdated = true;
+        } catch(e) {
+          // 刻意不寫入 cachedRate——見上方說明，不假裝已經確認過利率。
+          _diagEntry.phase = timedOut ? 'timeout' : 'error';
+          _diagEntry.ms = Date.now() - _diagT0;
+          _diagEntry.errorCode = timedOut ? 'network' : classifyDiagError_(e, _stage);
+        } finally {
+          clearTimeout(timeoutId);
+        }
+        return _diagEntry.seq;
+      })();
+    } else {
+      uiDiagLog_({ action: 'getSetting', section: 'bank-rate', phase: 'joined-inflight' });
     }
+    try { _cacheEntrySeq = await _bankRateFetchInFlight_; }
+    finally { _bankRateFetchInFlight_ = null; }
   }
 
-  const ratePct = (cachedRate * 100).toFixed(1);
-  const interestAmt = Math.floor(balance * cachedRate);
+  // P-PerfAudit20260923 候選（2026-09-23 覆核後新增：修正既有缺陷，非本輪新增回歸）：
+  // 上面那個 await 讓出過執行權——如果使用者在等待期間已經切到別的孩子，這裡的
+  // childId 已經不是目前畫面顯示的孩子了。原本沒有這個檢查時，B 孩子正確顯示的
+  // 利率／預估利息會被 A 孩子這次呼叫（用 A 孩子的 balance 算出來的結果）覆蓋掉。
+  // balance 也一併搬到這裡才讀，確保用的是目前這個孩子最新的餘額，不是呼叫當下
+  // 的舊快照。這裡開始是「畫面套用」階段，跟上面的「快取更新」階段分開記錄。
+  if (currentChild !== childId) {
+    uiDiagLog_({ action: 'getSetting', section: 'bank-rate', phase: 'skipped-apply', cacheEntrySeq: _cacheEntrySeq, reason: 'child-switched' });
+    return;
+  }
 
-  // 更新看板
+  const balance = allData[childId]?.balance ?? 0;
   const rateEl = document.getElementById('bank-rate-display');
   const previewEl = document.getElementById('bank-interest-preview');
+  if (cachedRate === null) {
+    if (rateEl) rateEl.textContent = '尚未確認';
+    if (previewEl) previewEl.innerHTML = '—';
+    uiDiagLog_({ action: 'getSetting', section: 'bank-rate', phase: 'applied-unknown', cacheEntrySeq: _cacheEntrySeq });
+    return;
+  }
+  const ratePct = (cachedRate * 100).toFixed(1);
+  const interestAmt = Math.floor(balance * cachedRate);
   if (rateEl) rateEl.textContent = ratePct + '%';
   if (previewEl) previewEl.innerHTML = '+' + interestAmt + ' ' + C(15);
+  uiDiagLog_({ action: 'getSetting', section: 'bank-rate', phase: 'applied', cacheEntrySeq: _cacheEntrySeq });
 }
 
 function showRateDetail() {
   const childId = currentChild;
   const balance = allData[childId]?.balance ?? 0;
-  const rate = cachedRate ?? 0.02;
-  const ratePct = (rate * 100).toFixed(1);
-  const interestAmt = Math.floor(balance * rate);
+  // P-PerfAudit20260923 候選（2026-09-23 覆核後修正：新增回歸）：原本這裡用
+  // `cachedRate ?? 0.02`，導致看板已經正確顯示「尚未確認」的同一時刻，點開詳情
+  // 卻顯示一個沒人驗證過的假 2%——看板跟詳情呈現互相矛盾的資訊。改成利率未知時
+  // 詳情也明確顯示「尚未確認」，不再用猜測值冒充已確認資料。
+  const rateKnown = cachedRate !== null;
+  const ratePctText = rateKnown ? (cachedRate * 100).toFixed(1) + '%' : '尚未確認';
+  const interestAmt = rateKnown ? Math.floor(balance * cachedRate) : null;
   const m = MEMBERS[childId];
 
   document.getElementById('rate-modal-hedgehog').innerHTML = hedgehogIMG(52);
-  document.getElementById('rate-modal-rate').textContent = ratePct + '%';
+  document.getElementById('rate-modal-rate').textContent = ratePctText;
   document.getElementById('rate-modal-balance').innerHTML = balance + ' ' + C(18);
-  document.getElementById('rate-modal-interest').innerHTML = '+' + interestAmt + ' ' + C(18);
+  document.getElementById('rate-modal-interest').innerHTML = rateKnown ? ('+' + interestAmt + ' ' + C(18)) : '—';
 
   // 動態提示語
   let tip = '';
-  if (interestAmt === 0) {
+  if (!rateKnown) {
+    tip = `🦔 ${rb('利率還沒確認成功，稍後重新整理或回銀行分頁看看，成功後這裡會自動顯示真正的利率！')}`;
+  } else if (interestAmt === 0) {
     tip = `🦔 ${rb('存款太少了，利息要從 1 枚起！快去做家事多存一點吧！')}`;
-  } else if (rate >= 0.05) {
+  } else if (cachedRate >= 0.05) {
     tip = `🌟 ${rb('哇！行長給的利率超高！這週努力存，下週利息大豐收！')}`;
   } else if (interestAmt >= 10) {
     tip = `📈 ${rb('存款越多，利息越多！繼續把代幣存在銀行讓錢滾錢！')}`;
