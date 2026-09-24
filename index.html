@@ -7564,7 +7564,38 @@ function removeFromCart(idx) {
 
 let processingOrder = false;
 
+// P-OrderDiag20260924 候選（2026-09-24 三次修正）：submitOrder() 診斷紀錄，只用
+// 來找出「等待發生在哪個階段」，本身不會讓點餐變快，也不改變任何交易判斷或
+// 請求。批次序號（batchId）只是本機遞增計數器，不含孩子身分、不含任何可識別
+// 資訊，純粹讓同一次送出、各品項的紀錄能在複製出來的 log 裡對得起來。
+let _submitDiagBatchSeq_ = 0;
+
+// 2026-09-24 三次修正：計時本身要能安全失效——量測到耗時是「順便」的，絕對
+// 不能因為計時這件事本身出錯就影響到交易。這兩個 helper 各自包住自己的
+// try/catch，量不到就回傳 undefined（省略耗時），絕對不拋出例外、也不假裝
+// 量到了 0 毫秒。之所以需要獨立的 helper，是因為原本 performance.now() 直接
+// 寫在 uiDiagLog_({...}) 呼叫的參數裡——如果 performance.now() 本身出錯，
+// 這個例外發生在「組出參數物件」這一步，還沒真的呼叫到 uiDiagLog_()，並不會
+// 被 uiDiagLog_() 自己既有的 try/catch 接住（那個保護的是函式「裡面」的邏輯，
+// 不是呼叫端組參數時發生的例外）。
+function _safeDiagNow_() {
+  try { return performance.now(); } catch (e) { return null; }
+}
+function _safeDiagElapsedMs_(t0) {
+  if (t0 === null || t0 === undefined) return undefined;
+  try {
+    const now = performance.now();
+    return now - t0;
+  } catch (e) { return undefined; }
+}
+
 async function submitOrder() {
+  // 2026-09-24 二次修正：起始時間點在函式最前面就取（涵蓋前面所有處理時間），
+  // 但被重複點擊或餘額不足擋下的情況完全不記錄任何診斷紀錄——這兩種情況根本
+  // 沒有真的送出，記成「已送出」會誤導判讀。三次修正：改用 _safeDiagNow_()，
+  // 就算這裡取時間失敗，也不能讓 submitOrder() 整個中斷、卡在
+  // processingOrder=true 出不來。
+  const _submitT0 = _safeDiagNow_();
   if (processingOrder) return;
   const cart = getCart();
   const balance = allData[currentChild]?.balance || 0;
@@ -7579,17 +7610,57 @@ async function submitOrder() {
   const m = MEMBERS[currentChild];
   closeCart();
   showToast(`📨 ${m.name} 的訂單送出中...`, '');
+
+  // 確定真的要送出了，這裡才記「開始」——跟原本要結束時把同一筆紀錄改名成
+  // 「已完成」不同，這裡是獨立的一筆，開始／結束各自留自己的紀錄與時間戳記，
+  // 用 batchId 關聯，不靠事後改同一個物件的欄位（那樣容易讓人誤讀成「結束
+  // 時間」其實是「開始時間」被覆寫掉名稱）。
+  const _submitBatchId = ++_submitDiagBatchSeq_;
+  uiDiagLog_({ action: 'submitOrder', phase: 'submit-start', batchId: _submitBatchId, itemCount: cart.length });
+
   const failed = [];
+  let _itemIdx = 0;
   for (const item of cart) {
     const noteParam = item.note ? `&note=${encodeURIComponent(item.note)}` : '';
     const url = `${API}?action=purchaseItem&childId=${currentChild}&itemId=${encodeURIComponent(item.food_id)}${noteParam}`;
+    const _itemT0 = _safeDiagNow_();
+    // 2026-09-24 三次修正：補回「請求送出前」這筆——原本只有送出開始跟收到
+    // 回應／失敗兩端，如果請求一直沒回來，log 裡只看得到 submit-start，
+    // 無法確認卡在第幾個品項。這裡沒有新增任何網路呼叫，純粹是在既有的
+    // fetch(url) 呼叫之前多記一筆診斷。
+    uiDiagLog_({ action: 'purchaseItem', phase: 'request-sent', batchId: _submitBatchId, itemIndex: _itemIdx });
+    // 2026-09-24 二次修正：用「現在執行到哪個階段」分辨 fetch 本身失敗
+    // 還是回應解析失敗——兩者都不能證明後端沒有扣款，只是失敗發生的
+    // 位置不同，這裡只做分類，不改變 failed.push(...) 這條既有交易流程。
+    // 三次修正：新增 'process' 階段——JSON 解析本身成功之後，如果後續
+    // 處理解析結果（例如讀取 result.error）才出錯，不能誤記成解析失敗，
+    // 因為解析這件事本身已經成功並且已經記錄過一筆 response-read-and-parsed。
+    let _stage = 'fetch';
     try {
       const res = await fetch(url);
+      _stage = 'parse';
       const result = await res.json();
+      // 2026-09-24 二次修正：改名為「回應讀取與解析完成」，因為這段時間
+      // 包含 res.json() 的解析，不是單純網路往返；耗時用 performance.now()
+      // （單調時鐘，不受系統時間調整影響），日期時間仍由 uiDiagLog_() 既有的
+      // entry.t（ISO 字串）自動記錄，兩者用途不同、都保留。
+      uiDiagLog_({ action: 'purchaseItem', phase: 'response-read-and-parsed', batchId: _submitBatchId, itemIndex: _itemIdx, ms: _safeDiagElapsedMs_(_itemT0) });
+      // 三次修正：解析本身已經成功記錄完，接下來如果讀取 result.error 這一步
+      // 本身出錯（例如 result 是合法但非物件的 JSON 值，像 null），要歸類成
+      //「解析完成之後的處理錯誤」，不是「解析失敗」——這裡明確切換階段。
+      _stage = 'process';
       if (result.error) failed.push({ item, error: result.error });
     } catch(e) {
+      // 2026-09-24 二次修正：fetch 階段失敗跟解析階段失敗分開標示
+      // （fetch-error／parse-error），提醒看紀錄的人這兩種都不能證明
+      // 後端沒有扣款成功，只是回應本身沒讀到或讀到但解析不了。
+      // 三次修正：新增 process-error，對應「解析已經成功，但後續處理解析
+      // 結果時才出錯」這個第三種情況，不再被誤記成 parse-error。
+      const _phase = _stage === 'fetch' ? 'fetch-error' : _stage === 'parse' ? 'parse-error' : 'process-error';
+      uiDiagLog_({ action: 'purchaseItem', phase: _phase, batchId: _submitBatchId, itemIndex: _itemIdx, ms: _safeDiagElapsedMs_(_itemT0) });
       failed.push({ item, error: '網路異常' });
     }
+    _itemIdx++;
   }
   // 只清掉成功送出的品項，失敗的留在購物車，避免帳沒扣但東西已經清空
   setCart(failed.map(f => f.item));
@@ -7597,12 +7668,19 @@ async function submitOrder() {
   closeCart();
   if (failed.length === 0) {
     showToast(`🎉 ${m.name} 的訂單送出！等媽媽確認喔～`, 'success');
+    // 2026-09-24 二次修正：結束紀錄緊接在 showToast() 之後、播放音效之前——
+    // 音效呼叫本身也要花一點時間，放在後面會把這段時間也算進去。這裡量的是
+    // 「觸發顯示結果」的時刻，不是「使用者眼睛真的看到畫面」的時刻，兩者不
+    // 能劃等號，這裡不宣稱排除了畫面繪製或系統合成的延遲。
+    uiDiagLog_({ action: 'submitOrder', phase: 'result-triggered', batchId: _submitBatchId, outcome: 'success', ms: _safeDiagElapsedMs_(_submitT0) });
     playAudioAsset('orderSuccess');
     playVoiceAsset('bearOrderReceived'); // Audio UX v1.0：熊大廚固定「收到訂單」語音
   } else if (failed.length === cart.length) {
     showToast(`❌ 訂單送出失敗：${failed[0].error}`, 'error');
+    uiDiagLog_({ action: 'submitOrder', phase: 'result-triggered', batchId: _submitBatchId, outcome: 'all-failed', ms: _safeDiagElapsedMs_(_submitT0) });
   } else {
     showToast(`⚠️ 「${failed.map(f=>f.item.item_name).join('、')}」送出失敗，已保留在購物車`, 'warn');
+    uiDiagLog_({ action: 'submitOrder', phase: 'result-triggered', batchId: _submitBatchId, outcome: 'partial-failed', ms: _safeDiagElapsedMs_(_submitT0) });
   }
   invalidateChildSectionCache_(currentChild, ['menu', 'orders', 'bank']);
   setTimeout(() => loadChildSection_('menu', currentChild, { reason: 'order-submit', force: true }), 2000);
