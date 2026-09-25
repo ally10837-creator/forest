@@ -2043,6 +2043,23 @@ function genDiagReqId_() {
   }
 }
 
+// P-BackendMs20260925 候選：只有回應本身是物件、且 `_backendMs` 是有限非負數
+// 時，才把這個值讀出來放進診斷紀錄；缺少這個欄位、格式不合法（字串、負數、
+// NaN、Infinity）、或 result 本身不是物件（包含 null／undefined），一律回傳
+// undefined（省略這個診斷欄位），不影響任何既有判斷、不影響任何既有欄位、
+// 也不會讓讀取這件事本身拋出例外中斷呼叫端的流程。業務失敗的回應（例如帶
+// `error` 欄位）一樣可能帶有這個欄位，這裡不因為業務失敗就跳過讀取。
+function readBackendMs_(result) {
+  try {
+    if (result && typeof result === 'object' &&
+        typeof result._backendMs === 'number' &&
+        Number.isFinite(result._backendMs) && result._backendMs >= 0) {
+      return result._backendMs;
+    }
+  } catch (e) { /* 讀取失敗一律省略，不影響呼叫端 */ }
+  return undefined;
+}
+
 // P-PerfAudit20260923 候選（2026-09-23 覆核後修正：原本依「錯誤物件的 type」分類，
 // 這裡改成依「執行到哪個階段」分類）：
 // 原本用 error.name==='TypeError' 一律歸成 network，但 TypeError 不是網路專屬的錯誤
@@ -2343,6 +2360,12 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     // 同一種 JS 錯誤型別（例如 TypeError）在 fetch 階段代表網路問題，在套用畫面階段
     // 卻可能是程式邏輯本身的 bug，不能只看 type 判斷。
     let _diagStage = 'network';
+    // P-BackendMs20260925 候選：hoist 到 try 外面，讓「回應確實送達並解析成功，
+    // 但屬於既有的業務失敗／格式不符分支」（下面的 invalid_section_response）
+    // 也能在 catch 分支裡讀到已經解析出來的物件——回應真的送達過，仍然可能
+    // 帶有效的 _backendMs，不能因為走進 catch 分支就當作沒收到回應。真正的
+    // fetch 失敗／JSON 解析失敗，_parsedResult 保持 undefined。
+    let _parsedResult;
     try {
       const _reqIdParam = _reqId ? ('&reqId=' + encodeURIComponent(_reqId)) : '';
       const url = API + '?action=getChildSection&childId=' + encodeURIComponent(childId) +
@@ -2350,6 +2373,7 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       const response = await fetch(url, { signal: controller.signal });
       _diagStage = 'format';
       const result = await response.json();
+      _parsedResult = result;
       if (!result || result.success !== true || result.childId !== childId ||
           result.section !== section || !result.data || typeof result.data !== 'object') {
         throw new Error('invalid_section_response');
@@ -2357,6 +2381,7 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       if (requestId !== _childSectionRequestSeq_ && currentChild !== childId) {
         _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.applied = false;
         _diagEntry.reason = 'superseded-or-child-switched';
+        _diagEntry.backendMs = readBackendMs_(result);
         return false;
       }
       _diagStage = 'apply';
@@ -2367,6 +2392,7 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       renderChildSectionIfCurrent_(childId, section);
       _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.applied = willRender;
       if (!willRender) _diagEntry.reason = 'child-or-tab-switched-away';
+      _diagEntry.backendMs = readBackendMs_(result);
       return true;
     } catch (error) {
       const stillHasData = hasChildSectionData_(childId, section);
@@ -2398,6 +2424,7 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       _diagEntry.errorCode = isTimeout ? 'network' : classifyDiagError_(error, _diagStage);
       _diagEntry.applied = isCurrentTarget;
       if (!isCurrentTarget) _diagEntry.reason = 'child-or-tab-switched-away';
+      _diagEntry.backendMs = readBackendMs_(_parsedResult);
       return false;
     } finally {
       clearTimeout(timeoutId);
@@ -7681,15 +7708,23 @@ async function submitOrder() {
     // 處理解析結果（例如讀取 result.error）才出錯，不能誤記成解析失敗，
     // 因為解析這件事本身已經成功並且已經記錄過一筆 response-read-and-parsed。
     let _stage = 'fetch';
+    // P-BackendMs20260925 候選：hoist 到 try 外面，讓「解析成功、但後續處理才
+    // 出錯」(process-error) 的 catch 分支也能讀到已經解析出來的物件——這種
+    // 情況回應其實已經送達並解析成功，仍然可能帶有效的 _backendMs，不能因為
+    // 走到 catch 分支就一律當作「沒收到回應」。fetch-error／parse-error 這兩種
+    // 分支本來就沒有成功解析出任何物件，_parsedResult 保持 undefined，
+    // readBackendMs_() 自然會回傳 undefined，不會假造數字。
+    let _parsedResult;
     try {
       const res = await fetch(url);
       _stage = 'parse';
       const result = await res.json();
+      _parsedResult = result;
       // 2026-09-24 二次修正：改名為「回應讀取與解析完成」，因為這段時間
       // 包含 res.json() 的解析，不是單純網路往返；耗時用 performance.now()
       // （單調時鐘，不受系統時間調整影響），日期時間仍由 uiDiagLog_() 既有的
       // entry.t（ISO 字串）自動記錄，兩者用途不同、都保留。
-      uiDiagLog_({ action: 'purchaseItem', phase: 'response-read-and-parsed', batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0) });
+      uiDiagLog_({ action: 'purchaseItem', phase: 'response-read-and-parsed', batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0), backendMs: readBackendMs_(result) });
       // 三次修正：解析本身已經成功記錄完，接下來如果讀取 result.error 這一步
       // 本身出錯（例如 result 是合法但非物件的 JSON 值，像 null），要歸類成
       //「解析完成之後的處理錯誤」，不是「解析失敗」——這裡明確切換階段。
@@ -7702,7 +7737,7 @@ async function submitOrder() {
       // 三次修正：新增 process-error，對應「解析已經成功，但後續處理解析
       // 結果時才出錯」這個第三種情況，不再被誤記成 parse-error。
       const _phase = _stage === 'fetch' ? 'fetch-error' : _stage === 'parse' ? 'parse-error' : 'process-error';
-      uiDiagLog_({ action: 'purchaseItem', phase: _phase, batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0) });
+      uiDiagLog_({ action: 'purchaseItem', phase: _phase, batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0), backendMs: readBackendMs_(_parsedResult) });
       failed.push({ item, error: '網路異常' });
     }
     _itemIdx++;
