@@ -1982,6 +1982,11 @@ const CHILD_SECTION_IDS = ['menu', 'chores', 'orders', 'penalty', 'bank'];
 const CHILD_SECTION_TIMEOUT_MS = 12000;
 const CHILD_SECTION_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 const _childSectionInFlight_ = new Map();
+// P-ReqCorrelation20260925 候選：跟 _childSectionInFlight_ 用同一把 key，只存這次
+// 真正送出請求所用的關聯碼（reqId），讓後來加入同一個 in-flight 請求的呼叫，也能
+// 在自己的診斷紀錄裡帶上同一個碼——純粹是額外的診斷欄位，不影響 _childSectionInFlight_
+// 本身回傳「同一個 promise」這個既有共享機制。
+const _childSectionInFlightReqId_ = new Map();
 const _childSectionLoadedAt_ = new Map();
 let _childSectionRequestSeq_ = 0;
 
@@ -1996,9 +2001,15 @@ let _childSectionRequestSeq_ = 0;
 // 有另外去 Apps Script 編輯器確認前兩種路線是否可讀，也不建議為了這件事貿然去
 // 連結新的標準 GCP 專案——沿用 Gate 0 階段已經有的立場，這裡只是先做一個不依賴
 // 任何後端記錄結論的獨立補強，不是宣稱前端診斷是唯一可行方法）。
-// 刻意不記 childId／URL／deployment／token／PIN／salt／requestId／完整回應內容，
-// 只記「哪個功能」「目前是什麼階段」「花了多久」「錯誤類型」——比照既有
-// petDiagLog_（index.html 內寵物流程診斷）的隱私排除原則。
+// 刻意不記 childId／URL／deployment／token／PIN／salt／完整回應內容，只記「哪個
+// 功能」「目前是什麼階段」「花了多久」「錯誤類型」——比照既有 petDiagLog_
+// （index.html 內寵物流程診斷）的隱私排除原則。
+// 2026-09-25 補正（P-ReqCorrelation20260925 候選）：這裡原本連 requestId 都排除，
+// 這輪新增的「請求關聯碼」是例外——它不是任何可回推身分的識別碼，只是每次真正
+// 送出請求時本機產生的一個短字串（時間戳+亂數，經過長度／字元白名單驗證），純粹
+// 用來跟後端 Logger.log 對照「這次手機請求對應到哪次後端執行」，範圍限定在
+// `purchaseItem`／`getChildSection` 兩個動作，不含孩子身分、不做冪等或防重複扣款
+// 用途。詳見 `genDiagReqId_()`。
 const UI_DIAG_LOG_MAX_ = 40;
 const _uiDiagLog_ = [];
 let _uiDiagSeq_ = 0;
@@ -2015,6 +2026,22 @@ function uiDiagLog_(entry) {
   } catch (e) { return {}; /* 診斷本身絕不能影響任何被記錄的流程 */ }
 }
 function getUiDiagLog_() { return _uiDiagLog_.slice(); }
+
+// P-ReqCorrelation20260925 候選：產生本次真正送出請求的關聯碼，只給
+// `purchaseItem`／`getChildSection` 這兩個動作使用。純粹是本機時間戳+亂數組成的
+// 短字串，不含孩子身分、不含任何可回推身分的資訊，也不具備防止重複扣款／冪等
+// 的功能——純粹用來讓前端診斷紀錄跟後端 log 能核對「同一次請求」。字元集限定
+// 小寫英數字，長度上限 32（跟後端驗證的白名單規則一致）。產生失敗（理論上不會，
+// 但比照既有 _safeDiagNow_ 的作法）回傳 undefined，呼叫端必須據此完全省略這個
+// 請求的 reqId 參數，不能送出 "undefined" 字面字串，也不能因此中斷原本的請求。
+function genDiagReqId_() {
+  try {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    return /^[a-z0-9]{1,32}$/.test(id) ? id : undefined;
+  } catch (e) {
+    return undefined;
+  }
+}
 
 // P-PerfAudit20260923 候選（2026-09-23 覆核後修正：原本依「錯誤物件的 type」分類，
 // 這裡改成依「執行到哪個階段」分類）：
@@ -2267,7 +2294,9 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     // P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：這次呼叫沒有真的另外發出
     // 請求，是直接沿用一個已經在飛行中的既有請求——如果不記一筆，診斷紀錄裡完全
     // 看不到這次呼叫發生過，容易被誤判成「根本沒被觸發」。
-    uiDiagLog_({ action: 'getChildSection', section, phase: 'joined-inflight' });
+    // P-ReqCorrelation20260925 候選：這裡沒有真的多發一個請求，所以沿用原本那次
+    // 請求的關聯碼（可能是 undefined，例如原本那次產生關聯碼失敗），不各自產生新的。
+    uiDiagLog_({ action: 'getChildSection', section, phase: 'joined-inflight', reqId: _childSectionInFlightReqId_.get(key) });
     return _childSectionInFlight_.get(key);
   }
 
@@ -2295,6 +2324,11 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     }
 
     const requestId = ++_childSectionRequestSeq_;
+    // P-ReqCorrelation20260925 候選：這次真的要發出請求了，產生本次的關聯碼並記到
+    // 跟 in-flight 共用的那張表，讓中途加入的呼叫也查得到同一個碼；產生失敗時
+    // reqId 是 undefined，下面組網址時會整段省略 &reqId=，不影響請求本身。
+    const _reqId = genDiagReqId_();
+    _childSectionInFlightReqId_.set(key, _reqId);
     const controller = new AbortController();
     let timedOut = false;
     const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, CHILD_SECTION_TIMEOUT_MS);
@@ -2303,15 +2337,16 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     // 停在 'sent'，就是「已發出、還在等」；成功／逾時／錯誤各自的分支再補上真正的
     // 結果，不需要另外猜。
     const _diagT0 = Date.now();
-    const _diagEntry = uiDiagLog_({ action: 'getChildSection', section, phase: 'sent' });
+    const _diagEntry = uiDiagLog_({ action: 'getChildSection', section, phase: 'sent', reqId: _reqId });
     // P-PerfAudit20260923 候選（2026-09-23 覆核後新增）：分類失敗原因時改用「現在執行
     // 到哪個階段」而不是「錯誤物件本身是什麼 type」——見 classifyDiagError_ 的說明，
     // 同一種 JS 錯誤型別（例如 TypeError）在 fetch 階段代表網路問題，在套用畫面階段
     // 卻可能是程式邏輯本身的 bug，不能只看 type 判斷。
     let _diagStage = 'network';
     try {
+      const _reqIdParam = _reqId ? ('&reqId=' + encodeURIComponent(_reqId)) : '';
       const url = API + '?action=getChildSection&childId=' + encodeURIComponent(childId) +
-        '&section=' + encodeURIComponent(section);
+        '&section=' + encodeURIComponent(section) + _reqIdParam;
       const response = await fetch(url, { signal: controller.signal });
       _diagStage = 'format';
       const result = await response.json();
@@ -2370,7 +2405,12 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
   })();
   _childSectionInFlight_.set(key, task);
   try { return await task; }
-  finally { if (_childSectionInFlight_.get(key) === task) _childSectionInFlight_.delete(key); }
+  finally {
+    if (_childSectionInFlight_.get(key) === task) {
+      _childSectionInFlight_.delete(key);
+      _childSectionInFlightReqId_.delete(key); // P-ReqCorrelation20260925 候選：跟 in-flight 一起清掉，不留殘留
+    }
+  }
 }
 
 // 首頁標題列同時顯示兩個孩子的代幣，但 P1.3 之後只會載入目前孩子的分頁資料。
@@ -7622,13 +7662,18 @@ async function submitOrder() {
   let _itemIdx = 0;
   for (const item of cart) {
     const noteParam = item.note ? `&note=${encodeURIComponent(item.note)}` : '';
-    const url = `${API}?action=purchaseItem&childId=${currentChild}&itemId=${encodeURIComponent(item.food_id)}${noteParam}`;
+    // P-ReqCorrelation20260925 候選：每個品項各自是獨立送出的請求（逐一序列送出，
+    // 沒有共用 in-flight 的機制），所以各自產生自己的關聯碼，不需要沿用機制；
+    // 產生失敗時 _reqId 是 undefined，網址整段省略 &reqId=，不影響請求本身。
+    const _reqId = genDiagReqId_();
+    const _reqIdParam = _reqId ? `&reqId=${encodeURIComponent(_reqId)}` : '';
+    const url = `${API}?action=purchaseItem&childId=${currentChild}&itemId=${encodeURIComponent(item.food_id)}${noteParam}${_reqIdParam}`;
     const _itemT0 = _safeDiagNow_();
     // 2026-09-24 三次修正：補回「請求送出前」這筆——原本只有送出開始跟收到
     // 回應／失敗兩端，如果請求一直沒回來，log 裡只看得到 submit-start，
     // 無法確認卡在第幾個品項。這裡沒有新增任何網路呼叫，純粹是在既有的
     // fetch(url) 呼叫之前多記一筆診斷。
-    uiDiagLog_({ action: 'purchaseItem', phase: 'request-sent', batchId: _submitBatchId, itemIndex: _itemIdx });
+    uiDiagLog_({ action: 'purchaseItem', phase: 'request-sent', batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId });
     // 2026-09-24 二次修正：用「現在執行到哪個階段」分辨 fetch 本身失敗
     // 還是回應解析失敗——兩者都不能證明後端沒有扣款，只是失敗發生的
     // 位置不同，這裡只做分類，不改變 failed.push(...) 這條既有交易流程。
@@ -7644,7 +7689,7 @@ async function submitOrder() {
       // 包含 res.json() 的解析，不是單純網路往返；耗時用 performance.now()
       // （單調時鐘，不受系統時間調整影響），日期時間仍由 uiDiagLog_() 既有的
       // entry.t（ISO 字串）自動記錄，兩者用途不同、都保留。
-      uiDiagLog_({ action: 'purchaseItem', phase: 'response-read-and-parsed', batchId: _submitBatchId, itemIndex: _itemIdx, ms: _safeDiagElapsedMs_(_itemT0) });
+      uiDiagLog_({ action: 'purchaseItem', phase: 'response-read-and-parsed', batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0) });
       // 三次修正：解析本身已經成功記錄完，接下來如果讀取 result.error 這一步
       // 本身出錯（例如 result 是合法但非物件的 JSON 值，像 null），要歸類成
       //「解析完成之後的處理錯誤」，不是「解析失敗」——這裡明確切換階段。
@@ -7657,7 +7702,7 @@ async function submitOrder() {
       // 三次修正：新增 process-error，對應「解析已經成功，但後續處理解析
       // 結果時才出錯」這個第三種情況，不再被誤記成 parse-error。
       const _phase = _stage === 'fetch' ? 'fetch-error' : _stage === 'parse' ? 'parse-error' : 'process-error';
-      uiDiagLog_({ action: 'purchaseItem', phase: _phase, batchId: _submitBatchId, itemIndex: _itemIdx, ms: _safeDiagElapsedMs_(_itemT0) });
+      uiDiagLog_({ action: 'purchaseItem', phase: _phase, batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0) });
       failed.push({ item, error: '網路異常' });
     }
     _itemIdx++;
