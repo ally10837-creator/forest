@@ -1990,6 +1990,25 @@ const _childSectionInFlightReqId_ = new Map();
 const _childSectionLoadedAt_ = new Map();
 let _childSectionRequestSeq_ = 0;
 
+// P-BackgroundTickDedup20260926 候選：只記「最近一次真正成功收到後端回應」的
+// 時間點，跟 _childSectionLoadedAt_ 不是同一件事——_childSectionLoadedAt_ 在
+// 從 sessionStorage 讀到舊快取、且這個孩子/分區這個 session 還沒資料時也會
+// 設定，不保證代表「剛剛真的打過後端」。這裡只在下面 loadChildSection_() 確認
+// 收到的是格式正確的成功回應時才設定，cache-hit（沒有真的發請求）、逾時、
+// 錯誤，或單純重繪畫面，都不會動到這個值——避免背景 tick 的「最近成功過
+// 就跳過」判斷被誤導成「看起來新鮮，其實只是快取命中或失敗」。只用在
+// backgroundChildTick_() 的跳過判斷，不影響 loadChildSection_() 本身任何
+// 既有行為、既有回傳值或既有的 cacheFresh／force 邏輯。
+const _childSectionLastFetchSuccessAt_ = new Map();
+// 背景 tick 用的「最近成功過就跳過」時間窗：等於 tick 本身的週期（30 秒）。
+// 2026-09-26 修正：上一版曾經因為「用零耗時模擬情境跑出 0% 減少」而誤判成
+// 這裡有邊界值問題、改成 35 秒——但那個結果本身就是正確的：模擬情境裡
+// fetch 瞬間完成，代表每次 tick 之間剛好都精確相隔 30 秒，「剛好滿 30 秒
+// 就重新更新」正是原本設計的預期行為，不是失效。真實情況下請求本身需要
+// 時間，成功的時間點自然會落在 tick 觸發之後，讓下一次 tick 的判斷正常
+// 生效——量化時應該用有耗時的回應去驗證，而不是靠拉長時間窗來製造減少量。
+const BACKGROUND_TICK_DEDUP_WINDOW_MS = 30000;
+
 // P-PerfAudit20260923 候選（未部署）：全站最小耗時診斷，只記在記憶體的環狀緩衝區
 // （不上傳、不寫 localStorage/sessionStorage、不影響任何判斷或畫面）。目的是回答
 // 「這次卡住是還沒送出、送出後還在等、逾時、回應失敗、還是成功了但沒套用畫面」，
@@ -2379,6 +2398,13 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
         throw new Error('invalid_section_response');
       }
       if (requestId !== _childSectionRequestSeq_ && currentChild !== childId) {
+        // 2026-09-26 修正：這裡是「回應被較新的請求／孩子切換取代，完全丟棄，
+        // 沒有套用到本機任何資料」的分支——資料根本沒有 merge 進 allData，
+        // 不能算這個孩子這個分區「剛剛更新過」。上一版把記錄新鮮時間戳記的
+        // 那一行放在這個判斷之前，導致完全被丟棄的回應也被誤判成新鮮，讓
+        // 之後的背景 tick 錯誤地跳過真正需要的請求。修正後，這個分支不記錄
+        // 任何新鮮時間戳記，只有下面真的呼叫 mergeChildSectionData_() 之後
+        // 才算數。
         _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.applied = false;
         _diagEntry.reason = 'superseded-or-child-switched';
         _diagEntry.backendMs = readBackendMs_(result);
@@ -2386,6 +2412,12 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       }
       _diagStage = 'apply';
       mergeChildSectionData_(childId, section, result.data);
+      // P-BackgroundTickDedup20260926 候選：資料已經真的合併進本機的 allData
+      // 了才記錄新鮮時間戳記——不要求一定有畫到目前畫面（下面 willRender 為
+      // 否的情況一樣算數，因為資料確實已經更新，只是這個孩子/分頁現在不是
+      // 目前顯示的那個），但上面「完全丟棄、沒有 merge」的分支絕對不能算。
+      // cache-hit、逾時、錯誤都不會走到這一行，不會被誤判成新鮮。
+      _childSectionLastFetchSuccessAt_.set(key, Date.now());
       writeChildSectionCache_(childId, section, result.data);
       setChildSectionStatus_(section, '', 'info');
       const willRender = currentChild === childId && currentSubTab === section;
@@ -10788,9 +10820,20 @@ async function backgroundChildTick_() {
       const outcome = await refreshPetStatusOnly_(childId, { reason: 'background-refresh', silent: true });
       if (outcome.ok && currentChild === childId && currentSubTab === 'forestpet') onEnterForestPet_({ silent: true });
     } else {
-      await loadChildSection_(currentSubTab, currentChild, {
-        reason: 'background-refresh', force: true, silent: true
-      });
+      // P-BackgroundTickDedup20260926 候選：如果這個孩子、這個分區「最近一次
+      // 真正成功收到後端資料」還在這個時間窗內，代表剛剛才真的更新過，這次
+      // tick 跳過、不用再強制打一次；否則維持原本行為（強制略過快取）。
+      // 只用「真正成功」的時間點判斷，cache-hit／逾時／錯誤都不會影響這個
+      // 判斷。手動更新按鈕與交易後刷新完全不受影響，維持原本一律強制的行為。
+      const _bgKey = childSectionKey_(currentChild, currentSubTab);
+      const _lastSuccessAt = _childSectionLastFetchSuccessAt_.get(_bgKey);
+      const _recentlySucceeded = _lastSuccessAt !== undefined &&
+        (Date.now() - _lastSuccessAt) < BACKGROUND_TICK_DEDUP_WINDOW_MS;
+      if (!_recentlySucceeded) {
+        await loadChildSection_(currentSubTab, currentChild, {
+          reason: 'background-refresh', force: true, silent: true
+        });
+      }
     }
   }
   updateBackgroundAudio(); // 不限定頁面，讓背景音軌不因切換孩子/子分頁/媽媽後台而停止
