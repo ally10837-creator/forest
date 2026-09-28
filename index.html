@@ -2102,6 +2102,27 @@ function readMenuMsBreakdown_(result) {
   return undefined;
 }
 
+// P-PurchaseDiagCapture20260929 候選：只有 purchaseItem 的回應才會帶
+// _purchaseMsBreakdown（後端 P-PurchaseBackendTiming20260928 候選新增），
+// 只在 purchaseItem 的既有診斷紀錄呼叫點使用，不需要另外判斷 action。
+// 跟既有 readMenuMsBreakdown_() 同一種保守風格：不整包 `return` 後端送
+// 來的物件，只複製 8 個已知標籤鍵值，逐一驗證是有限、非負的數字才收進
+// 「新建立」的物件，其餘鍵值一律不帶入。這個值只會掛在 uiDiagLog_() 的
+// 診斷紀錄物件上，不碰 allData、不碰任何購買/訂單/餘額/審核/退款邏輯。
+function readPurchaseMsBreakdown_(result) {
+  try {
+    const raw = result && typeof result === 'object' ? result._purchaseMsBreakdown : null;
+    if (!raw || typeof raw !== 'object') return undefined;
+    const out = {};
+    ['lockWait', 'itemLookup', 'menuRowRead', 'balanceRead', 'stockWrite', 'balanceUpdate', 'orderWrite', 'orderFinalize'].forEach(key => {
+      const v = raw[key];
+      if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[key] = v;
+    });
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch (e) { /* 讀取失敗一律省略，不影響呼叫端 */ }
+  return undefined;
+}
+
 // P-PerfAudit20260923 候選（2026-09-23 覆核後修正：原本依「錯誤物件的 type」分類，
 // 這裡改成依「執行到哪個階段」分類）：
 // 原本用 error.name==='TypeError' 一律歸成 network，但 TypeError 不是網路專屬的錯誤
@@ -7782,7 +7803,7 @@ async function submitOrder() {
       // 包含 res.json() 的解析，不是單純網路往返；耗時用 performance.now()
       // （單調時鐘，不受系統時間調整影響），日期時間仍由 uiDiagLog_() 既有的
       // entry.t（ISO 字串）自動記錄，兩者用途不同、都保留。
-      uiDiagLog_({ action: 'purchaseItem', phase: 'response-read-and-parsed', batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0), backendMs: readBackendMs_(result) });
+      uiDiagLog_({ action: 'purchaseItem', phase: 'response-read-and-parsed', batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0), backendMs: readBackendMs_(result), purchaseMsBreakdown: readPurchaseMsBreakdown_(result) });
       // 三次修正：解析本身已經成功記錄完，接下來如果讀取 result.error 這一步
       // 本身出錯（例如 result 是合法但非物件的 JSON 值，像 null），要歸類成
       //「解析完成之後的處理錯誤」，不是「解析失敗」——這裡明確切換階段。
@@ -7795,7 +7816,7 @@ async function submitOrder() {
       // 三次修正：新增 process-error，對應「解析已經成功，但後續處理解析
       // 結果時才出錯」這個第三種情況，不再被誤記成 parse-error。
       const _phase = _stage === 'fetch' ? 'fetch-error' : _stage === 'parse' ? 'parse-error' : 'process-error';
-      uiDiagLog_({ action: 'purchaseItem', phase: _phase, batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0), backendMs: readBackendMs_(_parsedResult) });
+      uiDiagLog_({ action: 'purchaseItem', phase: _phase, batchId: _submitBatchId, itemIndex: _itemIdx, reqId: _reqId, ms: _safeDiagElapsedMs_(_itemT0), backendMs: readBackendMs_(_parsedResult), purchaseMsBreakdown: readPurchaseMsBreakdown_(_parsedResult) });
       failed.push({ item, error: '網路異常' });
     }
     _itemIdx++;
