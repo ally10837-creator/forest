@@ -2079,6 +2079,29 @@ function readBackendMs_(result) {
   return undefined;
 }
 
+// P-MenuBackendTiming20260927 候選：只有 getChildSection(menu) 的回應才會
+// 帶 _menuMsBreakdown，其他分區的回應不會有這個欄位，這裡不用另外判斷
+// section，讀不到就自然回傳 undefined。刻意不整包 `return` 後端送來的
+// 物件——只複製 balance／menu／birthday／weatherHoliday 這四個白名單鍵值，
+// 逐一驗證是有限、非負的數字才收進「新建立」的物件，其餘鍵值一律不帶入，
+// 避免後端萬一夾帶非預期欄位被原封不動接進診斷紀錄。這個值只會掛在
+// uiDiagLog_() 的診斷紀錄物件上，不會、也不能碰 allData 或
+// writeChildSectionCache_ 的快取（那兩條路徑只讀 result.data，這個函式
+// 讀的是 result 最外層的 _menuMsBreakdown，完全是另一條路徑）。
+function readMenuMsBreakdown_(result) {
+  try {
+    const raw = result && typeof result === 'object' ? result._menuMsBreakdown : null;
+    if (!raw || typeof raw !== 'object') return undefined;
+    const out = {};
+    ['balance', 'menu', 'birthday', 'weatherHoliday'].forEach(key => {
+      const v = raw[key];
+      if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[key] = v;
+    });
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch (e) { /* 讀取失敗一律省略，不影響呼叫端 */ }
+  return undefined;
+}
+
 // P-PerfAudit20260923 候選（2026-09-23 覆核後修正：原本依「錯誤物件的 type」分類，
 // 這裡改成依「執行到哪個階段」分類）：
 // 原本用 error.name==='TypeError' 一律歸成 network，但 TypeError 不是網路專屬的錯誤
@@ -2408,6 +2431,7 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
         _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.applied = false;
         _diagEntry.reason = 'superseded-or-child-switched';
         _diagEntry.backendMs = readBackendMs_(result);
+        if (section === 'menu') _diagEntry.menuMsBreakdown = readMenuMsBreakdown_(result);
         return false;
       }
       _diagStage = 'apply';
@@ -2425,6 +2449,7 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       _diagEntry.phase = 'success'; _diagEntry.ms = Date.now() - _diagT0; _diagEntry.applied = willRender;
       if (!willRender) _diagEntry.reason = 'child-or-tab-switched-away';
       _diagEntry.backendMs = readBackendMs_(result);
+      if (section === 'menu') _diagEntry.menuMsBreakdown = readMenuMsBreakdown_(result);
       return true;
     } catch (error) {
       const stillHasData = hasChildSectionData_(childId, section);
@@ -2457,6 +2482,7 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       _diagEntry.applied = isCurrentTarget;
       if (!isCurrentTarget) _diagEntry.reason = 'child-or-tab-switched-away';
       _diagEntry.backendMs = readBackendMs_(_parsedResult);
+      if (section === 'menu') _diagEntry.menuMsBreakdown = readMenuMsBreakdown_(_parsedResult);
       return false;
     } finally {
       clearTimeout(timeoutId);
