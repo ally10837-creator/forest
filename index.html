@@ -2380,6 +2380,11 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     return _childSectionInFlight_.get(key);
   }
 
+  // P-InflightLifecycleDiag20260929 候選（2026-09-30 修正）：這個 task
+  // 自己的、真正不會變的 reqId——一旦 task 內部產生後就只會被寫入這一次，
+  // 外層 finally 的 cleanup 診斷靠讀這個變數做身分辨識，不讀共用 map，
+  // 避免 race 情境下記到別的請求的 reqId。
+  let _reqIdForCleanup;
   const task = (async () => {
     const cached = readChildSectionCache_(childId, section);
     const cacheFresh = cached && Date.now() - Number(cached.savedAt) <= CHILD_SECTION_CACHE_MAX_AGE_MS;
@@ -2408,10 +2413,23 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     // 跟 in-flight 共用的那張表，讓中途加入的呼叫也查得到同一個碼；產生失敗時
     // reqId 是 undefined，下面組網址時會整段省略 &reqId=，不影響請求本身。
     const _reqId = genDiagReqId_();
+    // P-InflightLifecycleDiag20260929 候選（2026-09-30 修正）：task 自己的
+    // reqId 一產生就立刻鏡射一份到外層變數，之後外層 finally 的 cleanup
+    // 診斷只讀這一份，不讀下面這個共用 map（那個 map 之後可能被別的請求
+    // 改寫，不適合拿來做這個 task 自己的身分辨識）。
+    _reqIdForCleanup = _reqId;
     _childSectionInFlightReqId_.set(key, _reqId);
     const controller = new AbortController();
     let timedOut = false;
-    const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, CHILD_SECTION_TIMEOUT_MS);
+    // P-InflightLifecycleDiag20260929 候選：只做診斷，不改變逾時本身的
+    // 判斷或任何既有行為——單純多記一筆「abort() 真的被呼叫的當下」，
+    // 用來跟下面 catch-entered 那筆比對，看 abort 呼叫到 fetch/json 的
+    // promise 真的 reject 之間，實際隔了多久。
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      uiDiagLog_({ action: 'getChildSection', section, phase: 'abort-fired', reqId: _reqId });
+    }, CHILD_SECTION_TIMEOUT_MS);
     // P-PerfAudit20260923 候選：送出當下先記一筆 phase:'sent'，之後不管走哪個分支
     // 都會回頭把同一個物件的欄位補上——中途如果去看 getUiDiagLog_()，會看到這筆還
     // 停在 'sent'，就是「已發出、還在等」；成功／逾時／錯誤各自的分支再補上真正的
@@ -2475,6 +2493,11 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
     } catch (error) {
       const stillHasData = hasChildSectionData_(childId, section);
       const isTimeout = timedOut || error?.name === 'AbortError';
+      // P-InflightLifecycleDiag20260929 候選：只做診斷——這裡是 fetch／
+      // response.json() 的 promise 真的 reject、catch 區塊真的開始執行
+      // 的當下，用來跟上面 abort-fired 那筆比對「abort() 呼叫到 promise
+      // 真的 reject 之間隔了多久」。
+      uiDiagLog_({ action: 'getChildSection', section, phase: 'catch-entered', reqId: _reqId, isTimeout });
       const message = isTimeout
         ? (stillHasData ? '伺服器回應較慢，先顯示上次資料' : '伺服器回應較慢，請稍後重試')
         : (stillHasData ? '暫時無法更新，先顯示上次資料' : '暫時無法載入，請稍後重試');
@@ -2504,6 +2527,11 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       if (!isCurrentTarget) _diagEntry.reason = 'child-or-tab-switched-away';
       _diagEntry.backendMs = readBackendMs_(_parsedResult);
       if (section === 'menu') _diagEntry.menuMsBreakdown = readMenuMsBreakdown_(_parsedResult);
+      // P-InflightLifecycleDiag20260929 候選：只做診斷——task 這個 async
+      // IIFE 即將 resolve(false) 的當下，用來跟下面外層 finally 記的
+      // inflight-cleanup 那筆比對，看 task 真的 resolve 到外層真的執行
+      // 清除 in-flight map 之間，實際隔了多久。
+      uiDiagLog_({ action: 'getChildSection', section, phase: 'task-settling', reqId: _reqId, resolvedTo: false });
       return false;
     } finally {
       clearTimeout(timeoutId);
@@ -2512,9 +2540,18 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
   _childSectionInFlight_.set(key, task);
   try { return await task; }
   finally {
-    if (_childSectionInFlight_.get(key) === task) {
+    const _cleanupStartAt = Date.now();
+    const _hadStaleEntry = _childSectionInFlight_.get(key) === task;
+    if (_hadStaleEntry) {
       _childSectionInFlight_.delete(key);
       _childSectionInFlightReqId_.delete(key); // P-ReqCorrelation20260925 候選：跟 in-flight 一起清掉，不留殘留
+    }
+    // P-InflightLifecycleDiag20260929 候選（2026-09-30 修正）：改讀補丁 0
+    // 鏡射的 _reqIdForCleanup（這個 task 自己的、不會變的 reqId），不再讀
+    // 上面這個共用 map——即使 map 這時已經被另一個新請求改寫，這裡記錄的
+    // 仍然是這個 task 自己真正的身分。
+    if (_reqIdForCleanup !== undefined) {
+      uiDiagLog_({ action: 'getChildSection', section, phase: 'inflight-cleanup', reqId: _reqIdForCleanup, hadStaleEntry: _hadStaleEntry, cleanupDurationMs: Date.now() - _cleanupStartAt });
     }
   }
 }
