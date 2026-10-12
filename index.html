@@ -2148,6 +2148,37 @@ function classifyDiagError_(error, stage) {
   return 'unknown';
 }
 
+// P-FormatShapeClass20261013 候選（第三版）：只在 errorCode==='format' 時，
+// 對已經解析出來的回應（parsedResult，可能是 undefined）做一次有限、明確
+// 列舉的「形狀」分類——4 種、互斥、涵蓋所有情況，不需要讀取或記錄任何原始
+// 內容。刻意叫「...Shape」而不是「...Cause」：符合某種形狀只代表「長得像」，
+// 不是已經證實真正的來源（例如 matches-backend-error-object-shape 這個
+// 分類，也可能是巧合長得像、或未來某個完全不同的來源也湊巧用了同樣的
+// {error,stack} 形狀——這裡只負責描述形狀，不負責下因果結論）。
+// 2026-10-13 第二次覆核修正：parsedResult 是 undefined 這個情況，改名為
+// response-read-or-parse-failure（原本叫 parse-failure，暗示一定是 JSON
+// 語法錯誤——但 response.json() 讀到一半失敗時丟的是 TypeError，不是
+// SyntaxError，這個分類本來就無法、也不需要分辨「語法錯誤」跟「讀取失敗」
+// 這兩種，名稱不應該只點名其中一種）。
+function classifyFormatShape_(parsedResult) {
+  try {
+    if (parsedResult === undefined) return 'response-read-or-parse-failure';
+    if (parsedResult === null || typeof parsedResult !== 'object' || Array.isArray(parsedResult)) {
+      return 'other-structure-mismatch';
+    }
+    if (parsedResult.success === false) return 'explicit-business-failure';
+    const hasSuccessKey = Object.prototype.hasOwnProperty.call(parsedResult, 'success');
+    if (!hasSuccessKey &&
+        typeof parsedResult.error === 'string' &&
+        typeof parsedResult.stack === 'string') {
+      return 'matches-backend-error-object-shape';
+    }
+    return 'other-structure-mismatch';
+  } catch (e) {
+    return 'other-structure-mismatch';
+  }
+}
+
 // P-PerfAudit20260923 候選：手機端不需要開發者工具就能看到／複製診斷紀錄的最小
 // 入口——只讀 getUiDiagLog_()，不會另外發任何網路請求。複製優先用
 // navigator.clipboard，不支援時退回 execCommand('copy')，兩者都失敗時明確提示
@@ -2523,6 +2554,12 @@ async function loadChildSection_(section, childId = currentChild, options = {}) 
       _diagEntry.phase = isTimeout ? 'timeout' : 'error';
       _diagEntry.ms = Date.now() - _diagT0;
       _diagEntry.errorCode = isTimeout ? 'network' : classifyDiagError_(error, _diagStage);
+      // P-FormatShapeClass20261013 候選（第三版）：只在上面算出來的
+      // errorCode 剛好是 'format' 時才多記這個分類標籤；其他情況
+      // （network/apply/unknown）完全不受影響，這個欄位會是 undefined。
+      if (_diagEntry.errorCode === 'format') {
+        _diagEntry.formatShapeClass = classifyFormatShape_(_parsedResult);
+      }
       _diagEntry.applied = isCurrentTarget;
       if (!isCurrentTarget) _diagEntry.reason = 'child-or-tab-switched-away';
       _diagEntry.backendMs = readBackendMs_(_parsedResult);
