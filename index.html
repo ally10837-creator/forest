@@ -8376,7 +8376,7 @@ function renderBank() {
   });
 
   // Totals
-  const earn     = week.filter(r => r.type === 'earn' || r.type === 'bonus').reduce((s,r) => s + r.amount, 0);
+  const earn     = week.filter(r => r.type === 'earn' || r.type === 'bonus' || r.type === 'birthday').reduce((s,r) => s + r.amount, 0);
   const interest = week.filter(r => r.type === 'interest').reduce((s,r) => s + r.amount, 0);
   const spend    = week.filter(r => r.type === 'spend').reduce((s,r) => s + r.amount, 0);
   const penalty  = week.filter(r => r.type === 'penalty' || r.type === 'deduct').reduce((s,r) => s + r.amount, 0);
@@ -8386,7 +8386,7 @@ function renderBank() {
     const d = parseCoinDate(r.created_at);
     return d && d > sunday;
   }).reduce((s, r) => {
-    if (['earn','bonus','interest','refund'].includes(r.type)) return s + r.amount;
+    if (['earn','bonus','birthday','interest','refund'].includes(r.type)) return s + r.amount;
     if (['spend','penalty','deduct'].includes(r.type)) return s - r.amount;
     return s;
   }, 0);
@@ -8420,7 +8420,7 @@ function renderBank() {
     if (!d) return;
     const idx = Math.floor((d - monday) / 86400000);
     if (idx < 0 || idx > 6) return;
-    if (r.type === 'earn' || r.type === 'bonus') days[idx].earn += r.amount;
+    if (r.type === 'earn' || r.type === 'bonus' || r.type === 'birthday') days[idx].earn += r.amount;
     else if (r.type === 'interest') days[idx].interest += r.amount;
     else if (r.type === 'spend') days[idx].spend += r.amount;
     else if (r.type === 'penalty' || r.type === 'deduct') days[idx].penalty += r.amount;
@@ -8464,7 +8464,7 @@ function renderBank() {
 
   // 每日逐筆明細：不再把整週相同原因合併加總
   const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const visibleDetailTypes = ['earn','bonus','interest','spend','penalty','deduct'];
+  const visibleDetailTypes = ['earn','bonus','birthday','interest','spend','penalty','deduct'];
   const detailDays = week.reduce((groups, record) => {
     // refund 只供對帳與餘額反推，不在銀行明細建立日期卡片或顯示項目。
     if (!visibleDetailTypes.includes(record.type)) return groups;
@@ -8477,7 +8477,7 @@ function renderBank() {
   }, {});
 
   const signedNet = r => {
-    if (['earn','bonus','interest','refund'].includes(r.type)) return r.amount;
+    if (['earn','bonus','birthday','interest','refund'].includes(r.type)) return r.amount;
     if (['spend','penalty','deduct'].includes(r.type)) return -r.amount;
     return 0;
   };
@@ -8500,6 +8500,7 @@ function renderBank() {
       }, 0);
       const dayBalance = Math.max(0, currentBalance - afterDayNet);
       const earnItems = day.records.filter(r => r.type === 'earn' || r.type === 'bonus');
+      const birthdayItems = day.records.filter(r => r.type === 'birthday');
       const interestItems = day.records.filter(r => r.type === 'interest');
       const spendItems = day.records.filter(r => r.type === 'spend');
       const penaltyItems = day.records.filter(r => r.type === 'penalty' || r.type === 'deduct');
@@ -8509,6 +8510,7 @@ function renderBank() {
           <span style="font-size:13px;font-weight:800;color:#6b3fc8;">💰 ${rb('餘額')} ${dayBalance}</span>
         </div>
         ${renderSection('賺幣明細', '📥', earnItems, '+', '#52c49a')}
+        ${renderSection('生日禮物', '🎂', birthdayItems, '+', '#52c49a')}
         ${renderSection('利息明細', '✨', interestItems, '+', '#a78bfa')}
         ${renderSection('花費明細', '📤', spendItems, '-', '#ff7f7f')}
         ${renderSection('扣款明細', '⚠️', penaltyItems, '-', '#ffb830')}
@@ -8530,7 +8532,7 @@ function checkWeeklyReview(childId) {
   const { monday, sunday } = getWeekRange(0);
   const week = history.filter(r => { const d = parseCoinDate(r.created_at); return d && d >= monday && d <= sunday; });
 
-  const earn     = week.filter(r => r.type==='earn'||r.type==='bonus').reduce((s,r)=>s+r.amount,0);
+  const earn     = week.filter(r => r.type==='earn'||r.type==='bonus'||r.type==='birthday').reduce((s,r)=>s+r.amount,0);
   const interest = week.filter(r => r.type==='interest').reduce((s,r)=>s+r.amount,0);
   const spend    = week.filter(r => r.type==='spend').reduce((s,r)=>s+r.amount,0);
   const penalty  = week.filter(r => r.type==='penalty'||r.type==='deduct').reduce((s,r)=>s+r.amount,0);
@@ -8542,7 +8544,7 @@ function checkWeeklyReview(childId) {
 
   // Group details
   const groupBy = (arr, key) => arr.reduce((m,r) => { (m[r[key]]=m[r[key]]||[]).push(r); return m; }, {});
-  const earnG    = groupBy(week.filter(r=>r.type==='earn'||r.type==='bonus'),'reason');
+  const earnG    = groupBy(week.filter(r=>r.type==='earn'||r.type==='bonus'||r.type==='birthday'),'reason');
   const intG     = groupBy(week.filter(r=>r.type==='interest'),'reason');
   const spendG   = groupBy(week.filter(r=>r.type==='spend'),'reason');
   const penG     = groupBy(week.filter(r=>r.type==='penalty'||r.type==='deduct'),'reason');
@@ -8873,7 +8875,7 @@ async function _claimBirthdayReward(childId) {
     if (data.status === 'claimed') {
       if (allData[childId]) allData[childId].balance = data.newBalance;
       updateBalanceDisplay();
-      if (claimArea) claimArea.innerHTML = `<div style="font-size:14px;font-weight:800;color:var(--mint);">✅ ${rb('已加入 200 枚生日金幣！')}</div>`;
+      if (claimArea) claimArea.innerHTML = `<div style="font-size:14px;font-weight:800;color:var(--mint);">✅ ${rb(typeof data.added === 'number' && Number.isFinite(data.added) && data.added > 0 ? `已加入 ${data.added} 枚生日金幣！` : '生日禮物已入帳！')}</div>`;
       playAudioAsset('coin');
       burst(100, '#ffb830');
     } else if (data.status === 'already_claimed') {
